@@ -1,0 +1,70 @@
+:root {
+  --bg-top: #f6f7f4;
+  --bg-bottom: #e7ebe6;
+  --glow: rgba(214, 226, 214, 0.9);
+  --ink: #1b2420;
+  --muted: #5f6b64;
+  --font: "Bricolage Grotesque Variable", "Bricolage Grotesque", sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  color: var(--ink);
+  font-family: var(--font);
+  background:
+    radial-gradient(ellipse 70% 55% at 50% -10%, var(--glow), transparent 58%),
+    linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-layout {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+}
+
+.home {
+  text-align: center;
+}
+
+.home h1 {
+  margin: 0;
+  font-size: clamp(2.4rem, 4vw, 3.4rem);
+  font-weight: 560;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  animation: rise 0.7s ease both;
+}
+
+.home p {
+  margin: 0.7rem 0 0;
+  color: var(--muted);
+  font-size: 1.05rem;
+  font-weight: 420;
+  letter-spacing: 0.01em;
+  animation: rise 0.7s ease 0.12s both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
