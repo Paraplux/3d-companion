@@ -11,10 +11,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@fontsource-variable/bricolage-grotesque": "^5.2.9",
     "@tauri-apps/api": "^2",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

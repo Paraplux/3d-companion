@@ -1,8 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "@fontsource-variable/bricolage-grotesque/wght.css";
+import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import { ThemeProvider } from "@/hooks/useTheme";
+import { applyResolvedTheme, readStoredTheme, resolveTheme } from "@/lib/theme";
 import "./styles/global.css";
+
+applyResolvedTheme(resolveTheme(readStoredTheme()));
 
 const root = document.getElementById("root");
 
@@ -12,6 +16,10 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <BrowserRouter>
+      <ThemeProvider>
+        <App />
+      </ThemeProvider>
+    </BrowserRouter>
   </StrictMode>,
 );

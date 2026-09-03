@@ -1,9 +1,15 @@
-import type { ReactNode } from "react";
+import { Outlet } from "react-router-dom";
+import { Sidebar } from "@/components/layout/Sidebar";
 
-type AppLayoutProps = {
-  children: ReactNode;
-};
-
-export function AppLayout({ children }: AppLayoutProps) {
-  return <div className="app-layout">{children}</div>;
+export function AppLayout() {
+  return (
+    <div className="app-shell">
+      <Sidebar />
+      <main className="app-content">
+        <div className="app-content__inner">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  );
 }
