@@ -14,6 +14,7 @@ import {
   getLibrarySnapshot,
   removeLibraryLocation,
   scanLibrary,
+  searchLibraryFiles,
   toUserError,
 } from "@/lib/libraryApi";
 import type { LibraryEvent, LibraryFile, LibraryLocation } from "@/types/library";
@@ -29,6 +30,7 @@ type LibraryContextValue = {
   addFolder: () => Promise<void>;
   removeFolder: (path: string) => Promise<void>;
   rescan: () => Promise<void>;
+  search: (query: string) => Promise<LibraryFile[]>;
 };
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
@@ -47,8 +49,6 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     async function bootstrap() {
-      setScanning(true);
-      setScanningLabel("Scanning…");
       try {
         const snapshot = await getLibrarySnapshot();
         if (cancelled) {
@@ -57,14 +57,16 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setLocations(snapshot.locations);
         setFiles(snapshot.files);
         setError(null);
+        if (snapshot.reconciling) {
+          setScanning(true);
+          setScanningLabel("Updating library…");
+        }
       } catch (err) {
         if (!cancelled) {
           setError(toUserError(err, "Could not load your library."));
         }
       } finally {
         if (!cancelled) {
-          setScanning(false);
-          setScanningLabel(null);
           setReady(true);
         }
       }
@@ -98,6 +100,13 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setFiles((current) =>
           current.filter((file) => file.locationPath !== payload.locationPath),
         );
+        return;
+      }
+
+      if (payload.type === "reconciliationFinished") {
+        setFiles(payload.files);
+        setScanning(false);
+        setScanningLabel(null);
       }
     }).then((fn) => {
       unlisten = fn;
@@ -126,7 +135,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       setScanningLabel("Scanning…");
 
       const result = await addLibraryLocation(selected);
-      setScanningLabel(`Scanning ${result.location.name}…`);
+      setScanningLabel(`Indexing ${result.location.name}…`);
       setLocations((current) => {
         if (current.some((location) => location.path === result.location.path)) {
           return current;
@@ -189,6 +198,10 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }
   }, [clearError]);
 
+  const search = useCallback(async (query: string) => {
+    return searchLibraryFiles(query);
+  }, []);
+
   const value = useMemo(
     () => ({
       locations,
@@ -201,6 +214,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       addFolder,
       removeFolder,
       rescan,
+      search,
     }),
     [
       locations,
@@ -213,6 +227,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       addFolder,
       removeFolder,
       rescan,
+      search,
     ],
   );
 

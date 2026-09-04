@@ -4,9 +4,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use walkdir::WalkDir;
 
-use super::models::{is_supported_extension, LibraryFile};
+use super::models::{is_supported_extension, ScannedFile};
 
-pub fn scan_location(location_path: &str) -> Result<Vec<LibraryFile>, String> {
+pub fn scan_location(location_path: &str) -> Result<Vec<ScannedFile>, String> {
     let root = PathBuf::from(location_path);
 
     if !root.exists() {
@@ -43,7 +43,7 @@ pub fn scan_location(location_path: &str) -> Result<Vec<LibraryFile>, String> {
             continue;
         }
 
-        match library_file_from_path(location_path, path, &extension) {
+        match scanned_file_from_path(location_path, path, &extension) {
             Ok(file) => files.push(file),
             Err(_) => continue,
         }
@@ -58,11 +58,11 @@ pub fn scan_location(location_path: &str) -> Result<Vec<LibraryFile>, String> {
     Ok(files)
 }
 
-pub fn library_file_from_path(
+pub fn scanned_file_from_path(
     location_path: &str,
     path: &Path,
     extension: &str,
-) -> Result<LibraryFile, String> {
+) -> Result<ScannedFile, String> {
     let metadata = fs::metadata(path)
         .map_err(|error| format!("Could not read file metadata: {error}"))?;
 
@@ -89,7 +89,7 @@ pub fn library_file_from_path(
                 .unwrap_or(0)
         });
 
-    Ok(LibraryFile {
+    Ok(ScannedFile {
         path: path.to_string_lossy().to_string(),
         name,
         extension: extension.to_string(),

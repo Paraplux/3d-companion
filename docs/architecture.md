@@ -215,12 +215,13 @@ Different machines may point at different folders for the same logical library:
 | Concept | Today |
 | --- | --- |
 | Physical file discovery | Rust scan + watcher (`src-tauri/src/library/`) |
-| Derived file list in UI | `LibraryFile` in `src/types/library.ts` |
-| Library locations (local config) | Rust `library-locations.json` |
+| Local SQLite index | `library.db` in app data dir (`src-tauri/src/database/`) |
+| Indexed file list in UI | `LibraryFile` DTO from SQLite via Tauri commands |
+| Library locations (local config) | `library_locations` table (legacy JSON migrated once) |
 | Theme (local config) | `localStorage` via `src/lib/theme.ts` |
-| Library Data types | `src/types/libraryData.ts` (contract only) |
-| App config types | `src/types/appConfig.ts` (contract only) |
-| SQLite | Not introduced |
+| Library Data types | `src/types/libraryData.ts` (contract; sync later) |
+| App config types | `src/types/appConfig.ts` |
+| Projects / collections / tags tables | Present in SQLite; UI CRUD later |
 | Syncthing / backup | Not introduced |
 
 ---
@@ -235,9 +236,9 @@ Different machines may point at different folders for the same logical library:
 
 ## 8. Decisions deferred
 
-- Exact ID scheme (ULID vs UUID).
-- When and how content hashes are computed/cached.
-- How to re-attach a `fileId` after move / rename / content change (needs local index).
-- Where `library.json` lives on disk and how conflicts are merged.
+- Exact ID scheme refinements (currently UUID v4 for new entities).
+- Richer re-association of `library_file_id` after complex move/edit conflicts.
+- Where portable `library.json` lives on disk and how conflicts are merged.
 - Syncthing integration details.
 - Optional explicit “organize on disk” / move feature.
+- STL/3MF parsing and thumbnails.

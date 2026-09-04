@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileCard } from "@/components/library/FileCard";
 import { FolderCard } from "@/components/library/FolderCard";
 import { LibraryBreadcrumbs } from "@/components/library/LibraryBreadcrumbs";
@@ -8,12 +8,11 @@ import { useLibrary } from "@/hooks/useLibrary";
 import {
   collectFolders,
   filesInDir,
-  filterFiles,
   locationByPath,
   parentRelativeDir,
   sortFiles,
 } from "@/lib/libraryBrowse";
-import type { SortDirection, SortField } from "@/types/library";
+import type { LibraryFile, SortDirection, SortField } from "@/types/library";
 
 type BrowseState = {
   locationPath: string | null;
@@ -31,6 +30,7 @@ export function LibraryPage() {
     clearError,
     addFolder,
     rescan,
+    search,
   } = useLibrary();
 
   const [browse, setBrowse] = useState<BrowseState>({
@@ -38,6 +38,7 @@ export function LibraryPage() {
     relativeDir: "",
   });
   const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<LibraryFile[] | null>(null);
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -45,6 +46,27 @@ export function LibraryPage() {
   const currentLocation = browse.locationPath
     ? locationByPath(locations, browse.locationPath)
     : undefined;
+
+  useEffect(() => {
+    if (!isSearching) {
+      setSearchResults(null);
+      return;
+    }
+
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      void search(query).then((results) => {
+        if (!cancelled) {
+          setSearchResults(results);
+        }
+      });
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [isSearching, query, search]);
 
   const visibleFolders = useMemo(() => {
     if (isSearching) {
@@ -65,7 +87,7 @@ export function LibraryPage() {
 
   const visibleFiles = useMemo(() => {
     if (isSearching) {
-      return sortFiles(filterFiles(files, query), sortField, sortDirection);
+      return sortFiles(searchResults ?? [], sortField, sortDirection);
     }
 
     if (!browse.locationPath) {
@@ -82,7 +104,7 @@ export function LibraryPage() {
     browse.relativeDir,
     files,
     isSearching,
-    query,
+    searchResults,
     sortDirection,
     sortField,
   ]);
@@ -280,7 +302,7 @@ export function LibraryPage() {
 
           {visibleFiles.map((file) => (
             <FileCard
-              key={file.path}
+              key={file.libraryFileId}
               file={file}
               showPath={isSearching}
               showLocation={isSearching && locations.length > 1}

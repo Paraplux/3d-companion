@@ -5,13 +5,27 @@ pub const SUPPORTED_EXTENSIONS: &[&str] = &["stl", "3mf", "obj", "step", "stp"];
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryLocation {
+    pub id: String,
     pub path: String,
     pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScannedFile {
+    pub path: String,
+    pub name: String,
+    pub extension: String,
+    pub size: u64,
+    pub modified_at: u64,
+    pub relative_path: String,
+    pub location_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryFile {
+    pub library_file_id: String,
+    pub content_hash: String,
     pub path: String,
     pub name: String,
     pub extension: String,
@@ -26,6 +40,7 @@ pub struct LibraryFile {
 pub struct LibrarySnapshot {
     pub locations: Vec<LibraryLocation>,
     pub files: Vec<LibraryFile>,
+    pub reconciling: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +61,10 @@ pub enum LibraryEvent {
     #[serde(rename_all = "camelCase")]
     LocationRemoved {
         location_path: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    ReconciliationFinished {
+        files: Vec<LibraryFile>,
     },
 }
 

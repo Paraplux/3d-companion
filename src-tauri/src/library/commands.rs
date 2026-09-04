@@ -1,9 +1,10 @@
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 
-use super::models::{
-    AddLibraryLocationResult, LibraryEvent, LibraryFile, LibraryLocation, LibrarySnapshot,
-};
-use super::state::LibraryState;
+use crate::library::models::{AddLibraryLocationResult, LibraryFile, LibraryLocation, LibrarySnapshot};
+use crate::library::state::LibraryState;
+use crate::repositories::collections::{list_collections, Collection};
+use crate::repositories::projects::{list_projects, Project};
+use crate::repositories::tags::{list_tags, Tag};
 
 #[tauri::command]
 pub fn get_library_snapshot(
@@ -21,13 +22,17 @@ pub fn get_library_locations(
 }
 
 #[tauri::command]
+pub fn get_library_files(state: State<'_, LibraryState>) -> Result<Vec<LibraryFile>, String> {
+    state.list_files()
+}
+
+#[tauri::command]
 pub fn add_library_location(
     app: AppHandle,
     state: State<'_, LibraryState>,
     path: String,
 ) -> Result<AddLibraryLocationResult, String> {
-    let (location, files) = state.add_location(&app, path)?;
-    Ok(AddLibraryLocationResult { location, files })
+    state.add_location(&app, path)
 }
 
 #[tauri::command]
@@ -36,14 +41,7 @@ pub fn remove_library_location(
     state: State<'_, LibraryState>,
     path: String,
 ) -> Result<(), String> {
-    state.remove_location(&app, path.clone())?;
-    let _ = app.emit(
-        "library://changed",
-        LibraryEvent::LocationRemoved {
-            location_path: path,
-        },
-    );
-    Ok(())
+    state.remove_location(&app, path)
 }
 
 #[tauri::command]
@@ -51,10 +49,33 @@ pub fn scan_library_location(
     state: State<'_, LibraryState>,
     path: String,
 ) -> Result<Vec<LibraryFile>, String> {
-    state.scan_one(&path)
+    state.rescan_location(&path)
 }
 
 #[tauri::command]
 pub fn scan_library(state: State<'_, LibraryState>) -> Result<Vec<LibraryFile>, String> {
-    state.scan_all()
+    state.rescan_all()
+}
+
+#[tauri::command]
+pub fn search_library_files(
+    state: State<'_, LibraryState>,
+    query: String,
+) -> Result<Vec<LibraryFile>, String> {
+    state.search_files(&query)
+}
+
+#[tauri::command]
+pub fn get_projects(state: State<'_, LibraryState>) -> Result<Vec<Project>, String> {
+    state.db().with_conn(list_projects)
+}
+
+#[tauri::command]
+pub fn get_collections(state: State<'_, LibraryState>) -> Result<Vec<Collection>, String> {
+    state.db().with_conn(list_collections)
+}
+
+#[tauri::command]
+pub fn get_tags(state: State<'_, LibraryState>) -> Result<Vec<Tag>, String> {
+    state.db().with_conn(list_tags)
 }

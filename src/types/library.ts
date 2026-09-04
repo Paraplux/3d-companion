@@ -1,28 +1,25 @@
 /**
- * Local / derived filesystem types (Phase 2).
+ * Local index / filesystem DTOs returned by Tauri commands.
  *
- * These describe what is currently on disk for this machine.
- * They are not part of syncable Library Data.
- *
- * Logical identity uses `LibraryFileId` (stable).
- * `ContentHash` is only a fingerprint of current bytes.
- * See `LibraryFileIdentity` in `@/types/libraryData` and docs/architecture.md.
+ * Physical scan fields are machine-local. Logical identity is `libraryFileId`.
+ * See docs/architecture.md.
  */
 
 import type { ContentHash, LibraryFileId } from "@/types/libraryData";
 
 export type LibraryLocation = {
+  id: string;
   path: string;
   name: string;
 };
 
 /**
- * A 3D file discovered by a local filesystem scan.
- *
- * Derived fields (path, size, mtime, name) can be recomputed from disk.
- * Do not treat them as portable user data.
+ * Indexed library file from the local SQLite index.
+ * Syncable relations always use `libraryFileId`, never `path` or `contentHash`.
  */
 export type LibraryFile = {
+  libraryFileId: LibraryFileId;
+  contentHash: ContentHash;
   path: string;
   name: string;
   extension: string;
@@ -32,18 +29,13 @@ export type LibraryFile = {
   locationPath: string;
 };
 
-/**
- * Target shape of a local index row (Phase 3+).
- * Syncable relations always use `fileId`, never `path` or `contentHash`.
- */
-export type IndexedLibraryFile = LibraryFile & {
-  fileId: LibraryFileId;
-  contentHash: ContentHash;
-};
+/** @deprecated Prefer LibraryFile — kept as an alias during Phase 3. */
+export type IndexedLibraryFile = LibraryFile;
 
 export type LibrarySnapshot = {
   locations: LibraryLocation[];
   files: LibraryFile[];
+  reconciling: boolean;
 };
 
 export type AddLibraryLocationResult = {
@@ -60,7 +52,31 @@ export type LibraryEvent =
   | {
       type: "locationRemoved";
       locationPath: string;
+    }
+  | {
+      type: "reconciliationFinished";
+      files: LibraryFile[];
     };
+
+export type Project = {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type Collection = {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type Tag = {
+  id: string;
+  name: string;
+  createdAt: number;
+};
 
 export type SortField = "name" | "modifiedAt" | "size" | "type";
 export type SortDirection = "asc" | "desc";

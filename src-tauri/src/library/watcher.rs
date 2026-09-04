@@ -8,8 +8,9 @@ use std::time::Duration;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter};
 
-use super::models::LibraryEvent;
-use super::scan::scan_location;
+use crate::database::Database;
+use crate::library::models::LibraryEvent;
+use crate::library::reconcile::reconcile_location;
 
 #[derive(Debug)]
 enum WatchCommand {
@@ -28,7 +29,7 @@ impl LibraryWatcher {
         }
     }
 
-    pub fn start(&self, app: AppHandle) {
+    pub fn start(&self, app: AppHandle, db: Arc<Database>) {
         let mut guard = match self.command_tx.lock() {
             Ok(guard) => guard,
             Err(_) => return,
@@ -48,6 +49,8 @@ impl LibraryWatcher {
 
             let pending_for_debounce = Arc::clone(&pending);
             let app_for_debounce = app.clone();
+            let db_for_debounce = Arc::clone(&db);
+
             thread::spawn(move || loop {
                 match event_rx.recv() {
                     Ok(location_path) => {
@@ -68,7 +71,7 @@ impl LibraryWatcher {
                         };
 
                         for location_path in locations {
-                            match scan_location(&location_path) {
+                            match reconcile_location(&db_for_debounce, &location_path) {
                                 Ok(files) => {
                                     let _ = app_for_debounce.emit(
                                         "library://changed",
@@ -78,9 +81,7 @@ impl LibraryWatcher {
                                         },
                                     );
                                 }
-                                Err(_) => {
-                                    // Keep the previous UI state when a transient scan fails.
-                                }
+                                Err(_) => {}
                             }
                         }
                     }
