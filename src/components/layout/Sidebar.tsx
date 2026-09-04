@@ -8,7 +8,7 @@ const primaryNav = [
 
 export function Sidebar() {
   return (
-    <aside className="sidebar" data-tauri-drag-region>
+    <aside className="sidebar">
       <div className="sidebar__brand" data-tauri-drag-region>
         <span className="sidebar__mark" aria-hidden="true" />
         <span className="sidebar__title">3D Library</span>

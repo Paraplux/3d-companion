@@ -43,7 +43,7 @@ export function ModelViewer({ file }: ModelViewerProps) {
     if (state.status === "ready") {
       setFitToken((value) => value + 1);
     }
-  }, [state]);
+  }, [state.status, state.status === "ready" ? state.data.plateId : null]);
 
   if (!supported) {
     return (
@@ -104,7 +104,10 @@ export function ModelViewer({ file }: ModelViewerProps) {
               ref={controlsRef}
               makeDefault
               enableDamping
-              dampingFactor={0.08}
+              dampingFactor={0.12}
+              rotateSpeed={0.85}
+              zoomSpeed={1.15}
+              panSpeed={0.9}
               maxPolarAngle={Math.PI * 0.49}
             />
           </Canvas>

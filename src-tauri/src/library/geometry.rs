@@ -11,7 +11,10 @@ use zip::ZipArchive;
 
 use crate::library::analysis::mesh::Mesh;
 use crate::library::analysis::stl::analyze_stl;
-use crate::library::analysis::threemf::{append_model_mesh, read_zip_entry};
+use crate::library::analysis::threemf::{
+    append_model_mesh, append_model_mesh_filtered, infer_plate_origin, read_zip_entry,
+    transform_translation_xy, translate_3mf_transform, BuildModelIndex,
+};
 use crate::library::models::{FilamentInfo, LibraryFile, ThreeMfObject, ThreeMfPlate};
 
 const MAX_TRIANGLES_PER_OBJECT: usize = 750_000;
@@ -114,7 +117,7 @@ fn load_3mf_geometry(
         .and_then(|bambu| bambu.filaments.clone())
         .unwrap_or_default();
 
-    let extruders = read_object_extruders(Path::new(&file.path)).unwrap_or_default();
+    let extruders = read_extruder_map(Path::new(&file.path)).unwrap_or_default();
 
     let (selected_plate_id, source_objects): (Option<String>, Vec<ThreeMfObject>) =
         if let Some(project) = threemf.project.as_ref() {
@@ -136,43 +139,110 @@ fn load_3mf_geometry(
     let mut archive =
         ZipArchive::new(archive_file).map_err(|error| format!("Invalid 3MF archive: {error}"))?;
 
-    let mut objects = Vec::new();
-    for object in source_objects {
-        let Some(mesh_path) = object.mesh_path.as_deref() else {
+    let build_index = match read_zip_entry(&mut archive, "3D/3dmodel.model") {
+        Ok(bytes) => BuildModelIndex::parse(&bytes),
+        Err(_) => BuildModelIndex::default(),
+    };
+
+    // Expand assemblies (item × each component) before plate-local normalization.
+    let mut pending: Vec<(
+        String,
+        Option<String>,
+        Option<Vec<f32>>,
+        Option<String>,
+        String,
+        Option<String>,
+    )> = Vec::new();
+    for object in &source_objects {
+        let instances = build_index.resolve_object(
+            &object.id,
+            object.mesh_path.as_deref(),
+            object.transform.as_deref(),
+        );
+        if instances.is_empty() {
             continue;
-        };
-        let safe_path = sanitize_zip_path(mesh_path)?;
+        }
+
+        for (component_index, instance) in instances.into_iter().enumerate() {
+            let instance_id = if component_index == 0 {
+                object.id.clone()
+            } else {
+                format!("{}:{}", object.id, component_index)
+            };
+            // Prefer per-part extruder (Bambu <part id> == component objectid),
+            // otherwise fall back to the parent object extruder.
+            let color = extruders
+                .resolve(&object.id, instance.source_object_id.as_deref())
+                .and_then(|extruder| color_for_extruder(extruder, &filaments));
+            pending.push((
+                instance_id,
+                object.name.clone(),
+                instance.transform,
+                color,
+                instance.mesh_path,
+                instance.source_object_id,
+            ));
+        }
+    }
+
+    if pending.is_empty() {
+        return Err("Could not extract geometry from this 3MF.".into());
+    }
+
+    // Bambu multi-plate projects share one absolute XY space with arrange offsets.
+    // Shift into the selected plate's local bed frame [0,W]×[0,D].
+    let infer_w = bed_width_mm.unwrap_or(256.0);
+    let infer_d = bed_depth_mm.unwrap_or(256.0);
+    let translations: Vec<(f32, f32)> = pending
+        .iter()
+        .filter_map(|entry| entry.2.as_deref().and_then(transform_translation_xy))
+        .collect();
+    let (origin_x, origin_y) = infer_plate_origin(&translations, infer_w, infer_d);
+
+    if origin_x != 0.0 || origin_y != 0.0 {
+        for entry in &mut pending {
+            if let Some(transform) = entry.2.as_mut() {
+                translate_3mf_transform(transform, -origin_x, -origin_y, 0.0);
+            }
+        }
+    }
+
+    let mut objects = Vec::new();
+    for (id, name, transform, color, mesh_path, source_object_id) in pending {
+        let safe_path = sanitize_zip_path(&mesh_path)?;
         let bytes = read_zip_entry(&mut archive, &safe_path)
-            .map_err(|_| format!("Could not read mesh for object {}.", object.id))?;
+            .map_err(|_| format!("Could not read mesh for object {id}."))?;
 
         let mut mesh = Mesh::default();
-        append_model_mesh(&mut mesh, &bytes)?;
+        append_model_mesh_filtered(&mut mesh, &bytes, source_object_id.as_deref())?;
         if mesh.triangle_count() == 0 {
             continue;
         }
         if mesh.triangle_count() > MAX_TRIANGLES_PER_OBJECT {
             return Err(format!(
                 "Object {} is too large for 3D preview.",
-                object.name.as_deref().unwrap_or(&object.id)
+                name.as_deref().unwrap_or(&id)
             ));
         }
 
-        let color = extruders
-            .get(&object.id)
-            .and_then(|extruder| color_for_extruder(*extruder, &filaments));
+        // Include source object id so we never reuse a stale whole-file cache entry.
+        let cache_object_id = match source_object_id.as_deref() {
+            Some(source) => format!("{id}__o{source}"),
+            None => id.clone(),
+        };
 
         let positions_path = write_positions_cache(
             cache_dir,
             &file.content_hash,
             selected_plate_id.as_deref().unwrap_or("plate"),
-            &object.id,
+            &cache_object_id,
             &mesh.positions,
         )?;
 
         objects.push(ModelGeometryObject {
-            id: object.id,
-            name: object.name,
-            transform: object.transform,
+            id,
+            name,
+            transform,
             color,
             positions_path,
             triangle_count: mesh.triangle_count() as u64,
@@ -316,30 +386,71 @@ fn write_positions_cache(
     Ok(absolute.to_string_lossy().to_string())
 }
 
-fn read_object_extruders(path: &Path) -> Result<HashMap<String, u32>, String> {
+fn read_extruder_map(path: &Path) -> Result<ExtruderMap, String> {
     let archive_file =
         fs::File::open(path).map_err(|error| format!("Could not open 3MF: {error}"))?;
     let mut archive =
         ZipArchive::new(archive_file).map_err(|error| format!("Invalid 3MF archive: {error}"))?;
     let Ok(bytes) = read_zip_entry(&mut archive, "Metadata/model_settings.config") else {
-        return Ok(HashMap::new());
+        return Ok(ExtruderMap::default());
     };
+    Ok(parse_extruder_map(&String::from_utf8_lossy(&bytes)))
+}
 
-    let text = String::from_utf8_lossy(&bytes);
-    let mut map = HashMap::new();
+/// Bambu maps filament slots via object/part extruder metadata.
+/// Component `objectid` matches `<part id>` inside the parent `<object>`.
+#[derive(Debug, Default, Clone)]
+struct ExtruderMap {
+    /// Parent build-object id → default extruder (1-based).
+    objects: HashMap<String, u32>,
+    /// `"objectId:partId"` → part extruder override (1-based).
+    parts: HashMap<String, u32>,
+}
+
+impl ExtruderMap {
+    fn resolve(&self, object_id: &str, part_id: Option<&str>) -> Option<u32> {
+        if let Some(part_id) = part_id {
+            if let Some(extruder) = self.parts.get(&format!("{object_id}:{part_id}")) {
+                return Some(*extruder);
+            }
+        }
+        self.objects.get(object_id).copied()
+    }
+}
+
+fn parse_extruder_map(text: &str) -> ExtruderMap {
+    let mut map = ExtruderMap::default();
+
     for object_block in text.split("<object ").skip(1) {
-        let Some(id) = attr_value(object_block, "id") else {
+        let Some(object_id) = attr_value(object_block, "id") else {
             continue;
         };
-        if let Some(extruder) = xml_meta_value(object_block, "extruder") {
-            if let Ok(index) = extruder.parse::<u32>() {
-                if index > 0 {
-                    map.insert(id, index);
-                }
+
+        // Object-level extruder lives in the header, before nested <part> blocks.
+        let header = object_block.split("<part ").next().unwrap_or(object_block);
+        if let Some(extruder) = parse_extruder_value(header) {
+            map.objects.insert(object_id.clone(), extruder);
+        }
+
+        for part_block in object_block.split("<part ").skip(1) {
+            let Some(part_id) = attr_value(part_block, "id") else {
+                continue;
+            };
+            let part_body = part_block.split("</part>").next().unwrap_or(part_block);
+            if let Some(extruder) = parse_extruder_value(part_body) {
+                map.parts
+                    .insert(format!("{object_id}:{part_id}"), extruder);
             }
         }
     }
-    Ok(map)
+
+    map
+}
+
+fn parse_extruder_value(text: &str) -> Option<u32> {
+    let value = xml_meta_value(text, "extruder")?;
+    let index = value.parse::<u32>().ok()?;
+    (index > 0).then_some(index)
 }
 
 fn color_for_extruder(extruder: u32, filaments: &[FilamentInfo]) -> Option<String> {
@@ -396,4 +507,69 @@ fn attr_value(text: &str, key: &str) -> Option<String> {
 
 pub fn geometry_cache_dir(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("geometry-cache")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_extruder_map_resolves_part_overrides() {
+        let xml = r#"
+<object id="11">
+  <metadata key="name" value="Ticket 1"/>
+  <metadata key="extruder" value="1"/>
+  <part id="1" subtype="normal_part">
+    <metadata key="name" value="Ticket"/>
+  </part>
+  <part id="2" subtype="normal_part">
+    <metadata key="name" value="Left Text"/>
+    <metadata key="extruder" value="5"/>
+  </part>
+  <part id="7" subtype="normal_part">
+    <metadata key="name" value="text_shape"/>
+    <metadata key="extruder" value="2"/>
+  </part>
+</object>
+<object id="5">
+  <metadata key="extruder" value="2"/>
+  <part id="4" subtype="normal_part">
+    <metadata key="name" value="Part 1"/>
+  </part>
+</object>
+"#;
+
+        let map = parse_extruder_map(xml);
+        assert_eq!(map.resolve("11", None), Some(1));
+        // Part without its own extruder inherits the object default.
+        assert_eq!(map.resolve("11", Some("1")), Some(1));
+        assert_eq!(map.resolve("11", Some("2")), Some(5));
+        assert_eq!(map.resolve("11", Some("7")), Some(2));
+        assert_eq!(map.resolve("5", Some("4")), Some(2));
+        assert_eq!(map.resolve("missing", Some("1")), None);
+    }
+
+    #[test]
+    fn color_for_extruder_uses_one_based_filament_index() {
+        let filaments = vec![
+            FilamentInfo {
+                material: Some("PLA".into()),
+                color: Some("#161616".into()),
+            },
+            FilamentInfo {
+                material: Some("PLA".into()),
+                color: Some("#FFFFFF".into()),
+            },
+        ];
+        assert_eq!(
+            color_for_extruder(1, &filaments).as_deref(),
+            Some("#161616")
+        );
+        assert_eq!(
+            color_for_extruder(2, &filaments).as_deref(),
+            Some("#FFFFFF")
+        );
+        assert_eq!(color_for_extruder(3, &filaments), None);
+        assert_eq!(color_for_extruder(0, &filaments), None);
+    }
 }

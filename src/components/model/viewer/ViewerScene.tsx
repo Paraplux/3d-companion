@@ -1,10 +1,11 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { useThree } from "@react-three/fiber";
-import { Box3, Group, Vector3 } from "three";
+import { useFrame, useThree } from "@react-three/fiber";
+import { Box3, Group, Mesh } from "three";
 import type { OrbitControlsHandle } from "@/components/model/viewer/orbitControlsRef";
 import type { ModelGeometryResponse } from "@/types/geometry";
 import { BuildPlate } from "@/components/model/viewer/BuildPlate";
 import { GeometryObjectMesh } from "@/components/model/viewer/GeometryObjectMesh";
+import { computeCameraFit } from "@/lib/viewerMath";
 
 type ViewerSceneProps = {
   geometry: ModelGeometryResponse;
@@ -13,13 +14,28 @@ type ViewerSceneProps = {
   controlsRef: React.RefObject<OrbitControlsHandle | null>;
 };
 
+function collectModelsBounds(models: Group): Box3 {
+  models.updateWorldMatrix(true, true);
+  models.traverse((object) => {
+    const mesh = object as Mesh;
+    if (mesh.isMesh && mesh.geometry) {
+      mesh.geometry.computeBoundingBox();
+      mesh.updateWorldMatrix(true, false);
+    }
+  });
+  return new Box3().setFromObject(models, true);
+}
+
 export function ViewerScene({
   geometry,
   isDark,
   fitToken,
   controlsRef,
 }: ViewerSceneProps) {
-  const rootRef = useRef<Group>(null);
+  const modelsRef = useRef<Group>(null);
+  const plateRef = useRef<Group>(null);
+  const pendingFitRef = useRef(true);
+  const fitAttemptsRef = useRef(0);
   const { camera, size } = useThree();
   const [readyCount, setReadyCount] = useState(0);
 
@@ -27,6 +43,7 @@ export function ViewerScene({
   const plateColor = isDark ? "#2a2c31" : "#e8eaed";
   const gridColor = isDark ? "#3a3d45" : "#c5c9d0";
   const centerToOrigin = geometry.format === "stl";
+  const objectCount = geometry.objects.length;
 
   const onObjectReady = useCallback(() => {
     setReadyCount((value) => value + 1);
@@ -37,78 +54,118 @@ export function ViewerScene({
   }, [geometry]);
 
   useLayoutEffect(() => {
-    if (readyCount < geometry.objects.length) {
+    pendingFitRef.current = true;
+    fitAttemptsRef.current = 0;
+  }, [fitToken, geometry, size.height, size.width]);
+
+  const applyFit = useCallback(
+    (box: Box3): boolean => {
+      if (box.isEmpty()) {
+        return false;
+      }
+
+      const fov =
+        "fov" in camera && typeof camera.fov === "number" ? camera.fov : 40;
+      const aspect = size.width / Math.max(size.height, 1);
+      const fit = computeCameraFit(box, fov, aspect);
+      if (!fit) {
+        return false;
+      }
+
+      camera.position.copy(fit.position);
+      camera.near = fit.near;
+      camera.far = fit.far;
+      camera.lookAt(fit.target);
+      camera.updateProjectionMatrix();
+
+      const controls = controlsRef.current;
+      if (controls) {
+        controls.target.copy(fit.target);
+        controls.minDistance = fit.minDistance;
+        controls.maxDistance = fit.maxDistance;
+        controls.update();
+      }
+
+      return true;
+    },
+    [camera, controlsRef, size.height, size.width],
+  );
+
+  useFrame(() => {
+    if (!pendingFitRef.current) {
       return;
     }
 
-    const root = rootRef.current;
-    if (!root) {
+    // Wait until every expected mesh has signaled ready.
+    if (readyCount < objectCount) {
       return;
     }
 
-    root.updateWorldMatrix(true, true);
-    const box = new Box3().setFromObject(root);
-    if (box.isEmpty()) {
+    const models = modelsRef.current;
+    if (!models) {
       return;
     }
 
-    const center = box.getCenter(new Vector3());
-    const sizeVec = box.getSize(new Vector3());
-    const radius = Math.max(sizeVec.length() * 0.5, 1);
-    const aspect = size.width / Math.max(size.height, 1);
-    const perspectiveFov =
-      "fov" in camera && typeof camera.fov === "number" ? camera.fov : 45;
-    const fov = (perspectiveFov * Math.PI) / 180;
-    const fitHeight = radius / Math.sin(fov / 2);
-    const fitWidth = fitHeight / Math.max(aspect, 0.0001);
-    const distance = Math.max(fitHeight, fitWidth) * 1.4;
+    fitAttemptsRef.current += 1;
+    const modelBox = collectModelsBounds(models);
 
-    const direction = new Vector3(0.9, 0.75, 1).normalize();
-    camera.position.copy(center).addScaledVector(direction, distance);
-    camera.near = Math.max(distance / 250, 0.01);
-    camera.far = Math.max(distance * 50, 1000);
-    camera.lookAt(center);
-    camera.updateProjectionMatrix();
-
-    const controls = controlsRef.current;
-    if (controls) {
-      controls.target.copy(center);
-      controls.minDistance = Math.max(radius * 0.15, 1);
-      controls.maxDistance = Math.max(distance * 6, 100);
-      controls.update();
+    if (!modelBox.isEmpty()) {
+      if (applyFit(modelBox)) {
+        pendingFitRef.current = false;
+      }
+      return;
     }
-  }, [
-    camera,
-    controlsRef,
-    fitToken,
-    geometry.objects.length,
-    readyCount,
-    size.height,
-    size.width,
-  ]);
+
+    // Only fall back to the plate when the plate truly has no objects.
+    if (objectCount === 0) {
+      const plate = plateRef.current;
+      if (!plate) {
+        return;
+      }
+      plate.updateWorldMatrix(true, true);
+      const plateBox = new Box3().setFromObject(plate, true);
+      if (applyFit(plateBox)) {
+        pendingFitRef.current = false;
+      }
+      return;
+    }
+
+    // Meshes reported ready but bounds are not valid yet — retry briefly.
+    if (fitAttemptsRef.current > 120) {
+      pendingFitRef.current = false;
+    }
+  });
 
   return (
-    <group ref={rootRef}>
+    <group>
       <group rotation={[-Math.PI / 2, 0, 0]}>
-        {geometry.format === "3mf" ? (
-          <BuildPlate
-            widthMm={geometry.bedWidthMm}
-            depthMm={geometry.bedDepthMm}
-            color={plateColor}
-            gridColor={gridColor}
-          />
-        ) : (
-          <gridHelper args={[220, 22, gridColor, gridColor]} rotation={[Math.PI / 2, 0, 0]} />
-        )}
-        {geometry.objects.map((object) => (
-          <GeometryObjectMesh
-            key={`${object.id}-${object.positionsPath}`}
-            object={object}
-            fallbackColor={modelColor}
-            centerToOrigin={centerToOrigin}
-            onReady={onObjectReady}
-          />
-        ))}
+        <group ref={plateRef}>
+          {geometry.format === "3mf" ? (
+            <BuildPlate
+              widthMm={geometry.bedWidthMm}
+              depthMm={geometry.bedDepthMm}
+              color={plateColor}
+              gridColor={gridColor}
+            />
+          ) : (
+            <gridHelper
+              args={[220, 22, gridColor, gridColor]}
+              rotation={[Math.PI / 2, 0, 0]}
+            />
+          )}
+        </group>
+
+        <group ref={modelsRef}>
+          {geometry.objects.map((object) => (
+            <GeometryObjectMesh
+              key={`${object.id}-${object.positionsPath}`}
+              object={object}
+              fallbackColor={modelColor}
+              centerToOrigin={centerToOrigin}
+              onReady={onObjectReady}
+            />
+          ))}
+        </group>
       </group>
     </group>
   );

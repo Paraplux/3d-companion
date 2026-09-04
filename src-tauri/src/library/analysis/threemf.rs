@@ -24,11 +24,35 @@ pub struct ThreeMfAnalysis {
     pub mesh: Option<Mesh>,
 }
 
+#[derive(Debug, Clone, Default)]
+struct ParsedComponent {
+    mesh_path: Option<String>,
+    /// Object id inside the referenced `.model` file (3MF component `objectid`).
+    source_object_id: Option<String>,
+    transform: Option<Vec<f32>>,
+}
+
 #[derive(Debug, Default)]
 struct ParsedObjectInfo {
     name: Option<String>,
     mesh_path: Option<String>,
+    components: Vec<ParsedComponent>,
     transform: Option<Vec<f32>>,
+}
+
+/// One drawable mesh after resolving build-item × component transforms.
+#[derive(Debug, Clone)]
+pub struct ResolvedMeshInstance {
+    pub mesh_path: String,
+    /// When set, only this object id inside `mesh_path` should be loaded.
+    pub source_object_id: Option<String>,
+    pub transform: Option<Vec<f32>>,
+}
+
+/// Index of build items + assembly components from `3D/3dmodel.model`.
+#[derive(Debug, Default)]
+pub struct BuildModelIndex {
+    objects: HashMap<String, ParsedObjectInfo>,
 }
 
 #[derive(Debug)]
@@ -517,6 +541,7 @@ fn parse_build_model_objects(bytes: &[u8], infos: &mut HashMap<String, ParsedObj
                         continue;
                     };
                     let mut mesh_path = None;
+                    let mut source_object_id = None;
                     let mut component_transform = None;
                     for attr in tag.attributes().flatten() {
                         let key = String::from_utf8_lossy(attr.key.local_name().as_ref())
@@ -524,17 +549,23 @@ fn parse_build_model_objects(bytes: &[u8], infos: &mut HashMap<String, ParsedObj
                         let value = attr.unescape_value().unwrap_or_default().to_string();
                         if key == "path" {
                             mesh_path = Some(normalize_package_path(&value));
+                        } else if key == "objectid" {
+                            source_object_id = Some(value);
                         } else if key == "transform" {
                             component_transform = parse_transform(&value);
                         }
                     }
                     let entry = infos.entry(object_id).or_default();
                     if entry.mesh_path.is_none() {
-                        entry.mesh_path = mesh_path;
+                        entry.mesh_path = mesh_path.clone();
                     }
-                    if entry.transform.is_none() {
-                        entry.transform = component_transform;
-                    }
+                    // Keep the build-item transform (set earlier). Component transforms
+                    // are stored separately and composed at geometry-load time.
+                    entry.components.push(ParsedComponent {
+                        mesh_path,
+                        source_object_id,
+                        transform: component_transform,
+                    });
                 }
             }
             Ok(Event::End(tag)) => {
@@ -789,23 +820,60 @@ fn extract_mesh(
 }
 
 pub(crate) fn append_model_mesh(mesh: &mut Mesh, bytes: &[u8]) -> Result<(), String> {
+    append_model_mesh_filtered(mesh, bytes, None)
+}
+
+/// Append triangle soup from a 3MF `.model` document.
+/// When `only_object_id` is set, only that `<object id="…">` mesh is loaded —
+/// required because Bambu packs many parts into one file and references them
+/// via component `objectid`.
+pub(crate) fn append_model_mesh_filtered(
+    mesh: &mut Mesh,
+    bytes: &[u8],
+    only_object_id: Option<&str>,
+) -> Result<(), String> {
     let text = String::from_utf8_lossy(bytes);
     let mut reader = Reader::from_str(&text);
     reader.config_mut().trim_text(true);
 
     let mut vertices: Vec<[f32; 3]> = Vec::new();
+    let mut object_active = only_object_id.is_none();
+    let mut found_target = only_object_id.is_none();
     let mut buf = Vec::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(tag)) | Ok(Event::Start(tag)) => {
+            Ok(Event::Start(tag)) | Ok(Event::Empty(tag)) => {
                 let local = String::from_utf8_lossy(tag.local_name().as_ref()).to_ascii_lowercase();
-                if local == "vertex" {
+                if local == "object" {
+                    let mut object_id = None;
+                    for attr in tag.attributes().flatten() {
+                        let key = String::from_utf8_lossy(attr.key.local_name().as_ref())
+                            .to_ascii_lowercase();
+                        if key == "id" {
+                            object_id =
+                                Some(attr.unescape_value().unwrap_or_default().to_string());
+                        }
+                    }
+                    // Each object has its own vertex index space.
+                    vertices.clear();
+                    object_active = match only_object_id {
+                        Some(target) => object_id.as_deref() == Some(target),
+                        None => true,
+                    };
+                    if object_active {
+                        found_target = true;
+                    }
+                } else if local == "vertex" {
+                    if !object_active {
+                        continue;
+                    }
                     let mut x = 0.0;
                     let mut y = 0.0;
                     let mut z = 0.0;
                     for attr in tag.attributes().flatten() {
-                        let key = String::from_utf8_lossy(attr.key.as_ref()).to_ascii_lowercase();
+                        let key = String::from_utf8_lossy(attr.key.local_name().as_ref())
+                            .to_ascii_lowercase();
                         let value = attr
                             .unescape_value()
                             .unwrap_or_default()
@@ -820,11 +888,15 @@ pub(crate) fn append_model_mesh(mesh: &mut Mesh, bytes: &[u8]) -> Result<(), Str
                     }
                     vertices.push([x, y, z]);
                 } else if local == "triangle" {
+                    if !object_active {
+                        continue;
+                    }
                     let mut v1 = 0_usize;
                     let mut v2 = 0_usize;
                     let mut v3 = 0_usize;
                     for attr in tag.attributes().flatten() {
-                        let key = String::from_utf8_lossy(attr.key.as_ref()).to_ascii_lowercase();
+                        let key = String::from_utf8_lossy(attr.key.local_name().as_ref())
+                            .to_ascii_lowercase();
                         let value = attr
                             .unescape_value()
                             .unwrap_or_default()
@@ -844,11 +916,24 @@ pub(crate) fn append_model_mesh(mesh: &mut Mesh, bytes: &[u8]) -> Result<(), Str
                     }
                 }
             }
+            Ok(Event::End(tag)) => {
+                let local = String::from_utf8_lossy(tag.local_name().as_ref()).to_ascii_lowercase();
+                if local == "object" {
+                    object_active = only_object_id.is_none();
+                    vertices.clear();
+                }
+            }
             Ok(Event::Eof) => break,
             Err(error) => return Err(format!("Could not parse 3MF model XML: {error}")),
             _ => {}
         }
         buf.clear();
+    }
+
+    if let Some(target) = only_object_id {
+        if !found_target {
+            return Err(format!("Object id {target} not found in 3MF model file."));
+        }
     }
 
     Ok(())
@@ -918,6 +1003,165 @@ fn parse_transform(value: &str) -> Option<Vec<f32>> {
     } else {
         None
     }
+}
+
+impl BuildModelIndex {
+    pub fn parse(bytes: &[u8]) -> Self {
+        let mut objects = HashMap::new();
+        parse_build_model_objects(bytes, &mut objects);
+        Self { objects }
+    }
+
+    /// Resolve a build object into one mesh instance per assembly component.
+    /// World transform is `T_item * T_component` (3MF / Three.js column-vector convention).
+    pub fn resolve_object(
+        &self,
+        object_id: &str,
+        fallback_mesh_path: Option<&str>,
+        fallback_transform: Option<&[f32]>,
+    ) -> Vec<ResolvedMeshInstance> {
+        let info = self.objects.get(object_id);
+        let item_transform = info
+            .and_then(|value| value.transform.as_deref())
+            .or(fallback_transform);
+
+        let components: Vec<(String, Option<String>, Option<Vec<f32>>)> = if let Some(info) = info {
+            if !info.components.is_empty() {
+                info.components
+                    .iter()
+                    .filter_map(|component| {
+                        let path = component.mesh_path.clone()?;
+                        Some((
+                            path,
+                            component.source_object_id.clone(),
+                            component.transform.clone(),
+                        ))
+                    })
+                    .collect()
+            } else if let Some(path) = info.mesh_path.clone() {
+                vec![(path, None, None)]
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
+        let components = if components.is_empty() {
+            if let Some(path) = fallback_mesh_path {
+                vec![(path.to_string(), None, None)]
+            } else {
+                return Vec::new();
+            }
+        } else {
+            components
+        };
+
+        components
+            .into_iter()
+            .map(|(mesh_path, source_object_id, component_transform)| {
+                let transform = match (item_transform, component_transform.as_deref()) {
+                    (Some(item), Some(component)) => multiply_3mf_transforms(item, component),
+                    (Some(item), None) => Some(item.to_vec()),
+                    (None, Some(component)) => Some(component.to_vec()),
+                    (None, None) => None,
+                };
+                ResolvedMeshInstance {
+                    mesh_path,
+                    source_object_id,
+                    transform,
+                }
+            })
+            .collect()
+    }
+}
+
+/// Multiply two 3MF transforms (`a * b`) using the same basis as Three.js `Matrix4`.
+pub fn multiply_3mf_transforms(a: &[f32], b: &[f32]) -> Option<Vec<f32>> {
+    let a = to_column_major(a)?;
+    let b = to_column_major(b)?;
+    let mut out = [0.0_f32; 16];
+    for col in 0..4 {
+        for row in 0..4 {
+            out[col * 4 + row] = (0..4)
+                .map(|k| a[k * 4 + row] * b[col * 4 + k])
+                .sum();
+        }
+    }
+    Some(from_column_major(&out))
+}
+
+pub fn translate_3mf_transform(transform: &mut [f32], dx: f32, dy: f32, dz: f32) {
+    if transform.len() == 12 {
+        transform[9] += dx;
+        transform[10] += dy;
+        transform[11] += dz;
+    } else if transform.len() >= 16 {
+        // Stored as 12-float layout packed into 16 is uncommon; treat last translation slots.
+        transform[12] += dx;
+        transform[13] += dy;
+        transform[14] += dz;
+    }
+}
+
+pub fn transform_translation_xy(transform: &[f32]) -> Option<(f32, f32)> {
+    if transform.len() == 12 {
+        Some((transform[9], transform[10]))
+    } else if transform.len() >= 16 {
+        Some((transform[12], transform[13]))
+    } else {
+        None
+    }
+}
+
+/// Infer a translation that maps plate objects into a local bed at the origin.
+///
+/// Bambu multi-plate projects store absolute arrange coordinates (often with a
+/// gap between beds). When objects already sit inside the bed rectangle we leave
+/// them alone; otherwise we shift the group so its centroid lands on bed center,
+/// preserving relative layout between objects on the same plate.
+pub fn infer_plate_origin(translations: &[(f32, f32)], bed_w: f32, bed_d: f32) -> (f32, f32) {
+    if translations.is_empty() || bed_w <= 1.0 || bed_d <= 1.0 {
+        return (0.0, 0.0);
+    }
+
+    // Already in plate-local space (single plate / no arrange offset).
+    let already_local = translations.iter().all(|&(x, y)| {
+        x >= -bed_w * 0.05
+            && x <= bed_w * 1.05
+            && y >= -bed_d * 0.05
+            && y <= bed_d * 1.05
+    });
+    if already_local {
+        return (0.0, 0.0);
+    }
+
+    let count = translations.len() as f32;
+    let cx = translations.iter().map(|value| value.0).sum::<f32>() / count;
+    let cy = translations.iter().map(|value| value.1).sum::<f32>() / count;
+    (cx - bed_w * 0.5, cy - bed_d * 0.5)
+}
+
+fn to_column_major(values: &[f32]) -> Option<[f32; 16]> {
+    if values.len() == 12 {
+        Some([
+            values[0], values[1], values[2], 0.0, values[3], values[4], values[5], 0.0,
+            values[6], values[7], values[8], 0.0, values[9], values[10], values[11], 1.0,
+        ])
+    } else if values.len() == 16 {
+        let mut out = [0.0_f32; 16];
+        out.copy_from_slice(values);
+        Some(out)
+    } else {
+        None
+    }
+}
+
+fn from_column_major(values: &[f32; 16]) -> Vec<f32> {
+    vec![
+        values[0], values[1], values[2], values[4], values[5], values[6], values[8], values[9],
+        values[10], values[12], values[13], values[14],
+    ]
 }
 
 fn normalize_package_path(path: &str) -> String {
@@ -1126,5 +1370,113 @@ mod tests {
             .iter()
             .flat_map(|plate| plate.objects.iter())
             .any(|object| object.transform.is_some()));
+    }
+
+    #[test]
+    fn multiply_3mf_transforms_composes_translation() {
+        let item = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 100.0, 20.0, 5.0];
+        let component = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 8.0, -47.5, 2.0];
+        let world = multiply_3mf_transforms(&item, &component).unwrap();
+        assert!((world[9] - 108.0).abs() < 1e-4);
+        assert!((world[10] - (-27.5)).abs() < 1e-4);
+        assert!((world[11] - 7.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn infer_plate_origin_snaps_bambu_arrange_offsets() {
+        // A1 mini 180mm bed — Dark Romance plate 3 / 4 absolute arrange coords.
+        let plate3 = infer_plate_origin(&[(558.0, 90.0)], 180.0, 180.0);
+        assert!((plate3.0 - (558.0 - 90.0)).abs() < 1e-3);
+        assert!((plate3.1 - (90.0 - 90.0)).abs() < 1e-3);
+        assert!((558.0 - plate3.0) > 0.0 && (558.0 - plate3.0) < 180.0);
+        assert!((90.0 - plate3.1) > 0.0 && (90.0 - plate3.1) < 180.0);
+
+        let plate4 = infer_plate_origin(&[(126.0, -126.0)], 180.0, 180.0);
+        let local_x = 126.0 - plate4.0;
+        let local_y = -126.0 - plate4.1;
+        assert!(local_x > 0.0 && local_x < 180.0);
+        assert!(local_y > 0.0 && local_y < 180.0);
+
+        // Already local → no shift.
+        let local = infer_plate_origin(&[(126.0, 90.0)], 180.0, 180.0);
+        assert_eq!(local, (0.0, 0.0));
+    }
+
+    #[test]
+    fn resolve_object_expands_multi_component_assemblies() {
+        let model = r#"<?xml version="1.0"?>
+<model>
+  <resources>
+    <object id="8" type="model">
+      <components>
+        <component path="/3D/Objects/object_1.model" objectid="1" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>
+        <component path="/3D/Objects/object_20.model" objectid="7" transform="1 0 0 0 1 0 0 0 1 8.27 -47.5 2.29"/>
+      </components>
+    </object>
+  </resources>
+  <build>
+    <item objectid="8" transform="1 0 0 0 1 0 0 0 1 558 90 47.585" printable="1"/>
+  </build>
+</model>"#;
+
+        let index = BuildModelIndex::parse(model.as_bytes());
+        let instances = index.resolve_object("8", None, None);
+        assert_eq!(instances.len(), 2);
+        assert_eq!(instances[0].mesh_path, "3D/Objects/object_1.model");
+        assert_eq!(instances[0].source_object_id.as_deref(), Some("1"));
+        assert_eq!(instances[1].mesh_path, "3D/Objects/object_20.model");
+        assert_eq!(instances[1].source_object_id.as_deref(), Some("7"));
+
+        let t0 = instances[0].transform.as_ref().unwrap();
+        let t1 = instances[1].transform.as_ref().unwrap();
+        assert!((t0[9] - 558.0).abs() < 1e-3);
+        assert!((t0[10] - 90.0).abs() < 1e-3);
+        assert!((t1[9] - (558.0 + 8.27)).abs() < 1e-2);
+        assert!((t1[10] - (90.0 - 47.5)).abs() < 1e-2);
+    }
+
+    #[test]
+    fn append_model_mesh_filters_by_object_id() {
+        let model = r#"<?xml version="1.0"?>
+<model>
+  <resources>
+    <object id="1" type="model">
+      <mesh>
+        <vertices>
+          <vertex x="0" y="0" z="0"/>
+          <vertex x="1" y="0" z="0"/>
+          <vertex x="0" y="1" z="0"/>
+        </vertices>
+        <triangles>
+          <triangle v1="0" v2="1" v3="2"/>
+        </triangles>
+      </mesh>
+    </object>
+    <object id="2" type="model">
+      <mesh>
+        <vertices>
+          <vertex x="10" y="0" z="0"/>
+          <vertex x="11" y="0" z="0"/>
+          <vertex x="10" y="1" z="0"/>
+          <vertex x="10" y="0" z="1"/>
+        </vertices>
+        <triangles>
+          <triangle v1="0" v2="1" v3="2"/>
+          <triangle v1="0" v2="2" v3="3"/>
+        </triangles>
+      </mesh>
+    </object>
+  </resources>
+</model>"#;
+
+        let mut all = Mesh::default();
+        append_model_mesh(&mut all, model.as_bytes()).unwrap();
+        assert_eq!(all.triangle_count(), 3);
+
+        let mut only2 = Mesh::default();
+        append_model_mesh_filtered(&mut only2, model.as_bytes(), Some("2")).unwrap();
+        assert_eq!(only2.triangle_count(), 2);
+        // First vertex of object 2 should be at x=10, not object 1's origin.
+        assert!((only2.positions[0] - 10.0).abs() < 1e-5);
     }
 }

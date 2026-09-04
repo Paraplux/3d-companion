@@ -5,7 +5,6 @@ import {
   DoubleSide,
   Matrix4,
   Mesh,
-  Quaternion,
   Vector3,
 } from "three";
 import type { ModelGeometryObject } from "@/types/geometry";
@@ -30,20 +29,20 @@ export function GeometryObjectMesh({
 }: GeometryObjectMeshProps) {
   const meshRef = useRef<Mesh>(null);
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
+  const signaledReadyRef = useRef(false);
 
-  const transform = useMemo(() => {
-    const matrix = object.transform && object.transform.length >= 12
-      ? matrixFrom3mfTransform(object.transform)
-      : new Matrix4();
-
-    const position = new Vector3();
-    const quaternion = new Quaternion();
-    const scale = new Vector3();
-    matrix.decompose(position, quaternion, scale);
-    return { position, quaternion, scale };
+  const matrix = useMemo(() => {
+    if (object.transform && object.transform.length >= 12) {
+      return matrixFrom3mfTransform(object.transform);
+    }
+    return new Matrix4();
   }, [object.transform]);
 
   const color = materialColorForObject(object, fallbackColor);
+
+  useEffect(() => {
+    signaledReadyRef.current = false;
+  }, [object.positionsPath]);
 
   useEffect(() => {
     let disposed = false;
@@ -65,9 +64,9 @@ export function GeometryObjectMesh({
           }
         }
         next.computeVertexNormals();
+        next.computeBoundingBox();
         current = next;
         setGeometry(next);
-        onReady?.();
       })
       .catch(() => {
         if (!disposed) {
@@ -83,24 +82,31 @@ export function GeometryObjectMesh({
         return null;
       });
     };
-  }, [centerToOrigin, object.positionsPath, onReady]);
+  }, [centerToOrigin, object.positionsPath]);
 
   useLayoutEffect(() => {
     const mesh = meshRef.current;
-    if (!mesh) {
+    if (!mesh || !geometry) {
       return;
     }
-    mesh.position.copy(transform.position);
-    mesh.quaternion.copy(transform.quaternion);
-    mesh.scale.copy(transform.scale);
-  }, [transform]);
+    // Apply the full 3MF matrix directly — avoid decompose() on near-orthonormal
+    // Bambu rotations (floating-point noise can look like a flip/scale glitch).
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.copy(matrix);
+    mesh.updateWorldMatrix(true, false);
+
+    if (!signaledReadyRef.current) {
+      signaledReadyRef.current = true;
+      onReady?.();
+    }
+  }, [geometry, matrix, onReady]);
 
   if (!geometry) {
     return null;
   }
 
   return (
-    <mesh ref={meshRef} geometry={geometry}>
+    <mesh ref={meshRef} geometry={geometry} matrixAutoUpdate={false}>
       <meshStandardMaterial
         color={color}
         roughness={0.55}

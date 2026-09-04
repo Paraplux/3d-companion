@@ -1,8 +1,77 @@
 /** Convert a 3MF 12- or 16-float transform into a Three.js Matrix4. */
-import { Matrix4 } from "three";
+import { Box3, Matrix4, Sphere, Vector3 } from "three";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { filamentCssColor } from "@/lib/filaments";
 import type { ModelGeometryObject } from "@/types/geometry";
+
+/** Target ~70% of the useful viewport (1 / 0.70 ≈ 1.43 → slightly tighter). */
+export const CAMERA_FIT_PADDING = 1.28;
+
+/** Default three-quarter viewing direction (world space). */
+export const CAMERA_FIT_DIRECTION = new Vector3(0.9, 0.75, 1).normalize();
+
+export type CameraFitResult = {
+  target: Vector3;
+  position: Vector3;
+  radius: number;
+  distance: number;
+  near: number;
+  far: number;
+  minDistance: number;
+  maxDistance: number;
+};
+
+/**
+ * Perspective distance so a sphere of `radius` fits in the viewport,
+ * then scaled by `padding` (>1 leaves margin around the model).
+ */
+export function perspectiveFitDistance(
+  radius: number,
+  fovDegrees: number,
+  aspect: number,
+  padding = CAMERA_FIT_PADDING,
+): number {
+  const safeRadius = Math.max(radius, 1);
+  const safeAspect = Math.max(aspect, 0.0001);
+  const vFov = (fovDegrees * Math.PI) / 180;
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * safeAspect);
+  const distVertical = safeRadius / Math.sin(vFov / 2);
+  const distHorizontal = safeRadius / Math.sin(hFov / 2);
+  return Math.max(distVertical, distHorizontal) * padding;
+}
+
+/**
+ * Frame a bounding box with a three-quarter camera.
+ * Uses the box's bounding sphere so wide and tall models both fit.
+ */
+export function computeCameraFit(
+  box: Box3,
+  fovDegrees: number,
+  aspect: number,
+  padding = CAMERA_FIT_PADDING,
+): CameraFitResult | null {
+  if (box.isEmpty()) {
+    return null;
+  }
+
+  const sphere = box.getBoundingSphere(new Sphere());
+  const target = sphere.center.clone();
+  const radius = Math.max(sphere.radius, 1);
+  const distance = perspectiveFitDistance(radius, fovDegrees, aspect, padding);
+  const position = target.clone().addScaledVector(CAMERA_FIT_DIRECTION, distance);
+
+  return {
+    target,
+    position,
+    radius,
+    distance,
+    near: Math.max(distance / 250, 0.01),
+    far: Math.max(distance * 50, 1000),
+    minDistance: Math.max(radius * 0.12, 0.5),
+    // Keep zoom range tight around the fitted distance so orbit/zoom stay responsive.
+    maxDistance: Math.max(distance * 3.5, radius * 6, 40),
+  };
+}
 
 export function matrixFrom3mfTransform(values: number[]): Matrix4 {
   const matrix = new Matrix4();

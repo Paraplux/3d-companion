@@ -66,11 +66,19 @@ export function ModelDetailPage() {
           Library
         </button>
 
-        <h1 className="model-detail__header-title" title={displayName}>
+        <h1
+          className="model-detail__header-title"
+          title={displayName}
+          data-tauri-drag-region
+        >
           {displayName}
         </h1>
 
-        <div className="model-detail__header-actions" aria-hidden="true">
+        <div
+          className="model-detail__header-actions"
+          aria-hidden="true"
+          data-tauri-drag-region
+        >
           {/* Actions reserved for a later phase */}
         </div>
       </header>
