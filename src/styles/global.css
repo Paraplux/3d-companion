@@ -500,6 +500,7 @@ a:focus-visible {
 }
 
 .model-viewer-placeholder {
+  position: relative;
   display: grid;
   place-items: center;
   width: 100%;
@@ -510,6 +511,21 @@ a:focus-visible {
   background: color-mix(in srgb, var(--hover) 70%, var(--bg-elevated));
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+}
+
+.model-viewer-placeholder__plates {
+  position: absolute;
+  right: 0.65rem;
+  bottom: 0.65rem;
+  margin: 0;
+  padding: 0.2rem 0.45rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
 }
 
 .model-viewer-placeholder__thumb {

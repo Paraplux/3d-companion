@@ -39,6 +39,32 @@ export type FilamentInfo = {
   color?: string;
 };
 
+export type ThreeMfObject = {
+  id: string;
+  name?: string;
+  meshPath?: string;
+  transform?: number[];
+};
+
+export type ThreeMfPlate = {
+  /** Stable plate id within this 3MF project (not LibraryFileId / ContentHash). */
+  id: string;
+  /** 1-based display order. */
+  index: number;
+  name?: string;
+  /** Absolute thumbnail path after backend resolution. */
+  thumbnailPath?: string;
+  objects?: ThreeMfObject[];
+  estimatedTimeSeconds?: number;
+  weightGrams?: number;
+};
+
+export type ThreeMfProject = {
+  /** Absolute thumbnail path after backend resolution. */
+  thumbnailPath?: string;
+  plates?: ThreeMfPlate[];
+};
+
 export type BambuMetadata = {
   printer?: string;
   nozzle?: string;
@@ -56,6 +82,7 @@ export type BambuMetadata = {
 export type ThreeMfMetadata = {
   isBambu: boolean;
   bambu?: BambuMetadata;
+  project?: ThreeMfProject;
 };
 
 /**

@@ -63,7 +63,27 @@ fn analyze_3mf_file(
     content_hash: &str,
     thumbnails_dir: &Path,
 ) -> Result<AnalysisOutcome, String> {
-    let analysis = analyze_3mf(path)?;
+    let mut analysis = analyze_3mf(path)?;
+
+    if let Some(project) = analysis.metadata.project.as_mut() {
+        if let Some(webp) = analysis.project_thumbnail_webp.as_ref() {
+            project.thumbnail_path =
+                Some(write_named_thumbnail(thumbnails_dir, content_hash, "project.webp", webp)?);
+        }
+
+        for plate in &mut project.plates {
+            if let Some(webp) = analysis.plate_thumbnails.get(&plate.index) {
+                let filename = format!("plate-{}.webp", plate.index);
+                plate.thumbnail_path =
+                    Some(write_named_thumbnail(thumbnails_dir, content_hash, &filename, webp)?);
+            }
+        }
+
+        if project.plates.is_empty() && project.thumbnail_path.is_none() {
+            analysis.metadata.project = None;
+        }
+    }
+
     let thumbnail_relpath = if let Some(webp) = analysis.thumbnail_webp {
         Some(write_thumbnail(thumbnails_dir, content_hash, &webp)?)
     } else if let Some(mesh) = analysis.mesh.as_ref() {
@@ -98,8 +118,50 @@ pub fn write_thumbnail(
     Ok(filename)
 }
 
+/// Writes `{contentHash}/{filename}` and returns the relative path.
+pub fn write_named_thumbnail(
+    thumbnails_dir: &Path,
+    content_hash: &str,
+    filename: &str,
+    webp: &[u8],
+) -> Result<String, String> {
+    let dir = thumbnails_dir.join(content_hash);
+    fs::create_dir_all(&dir)
+        .map_err(|error| format!("Could not create thumbnails directory: {error}"))?;
+    let absolute = dir.join(filename);
+    fs::write(&absolute, webp)
+        .map_err(|error| format!("Could not write thumbnail: {error}"))?;
+    Ok(format!("{content_hash}/{filename}"))
+}
+
 pub fn thumbnail_absolute(thumbnails_dir: &Path, relpath: &str) -> PathBuf {
     thumbnails_dir.join(relpath)
+}
+
+/// Resolve stored relative thumbnail paths to absolute paths for the frontend DTO.
+pub fn resolve_threemf_paths(
+    mut metadata: crate::library::models::ThreeMfMetadata,
+    thumbnails_dir: &Path,
+) -> crate::library::models::ThreeMfMetadata {
+    if let Some(project) = metadata.project.as_mut() {
+        if let Some(rel) = project.thumbnail_path.as_ref() {
+            project.thumbnail_path = Some(
+                thumbnail_absolute(thumbnails_dir, rel)
+                    .to_string_lossy()
+                    .to_string(),
+            );
+        }
+        for plate in &mut project.plates {
+            if let Some(rel) = plate.thumbnail_path.as_ref() {
+                plate.thumbnail_path = Some(
+                    thumbnail_absolute(thumbnails_dir, rel)
+                        .to_string_lossy()
+                        .to_string(),
+                );
+            }
+        }
+    }
+    metadata
 }
 
 pub fn mark_ready(

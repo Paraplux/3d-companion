@@ -38,44 +38,47 @@ function MetaSection({ title, rows }: { title: string; rows: MetaRow[] }) {
 
 function buildPrintRows(file: LibraryFile): MetaRow[] {
   const bambu = file.threemf?.bambu;
-  if (!bambu) {
+  const projectPlates = file.threemf?.project?.plates?.length ?? 0;
+  const plateCount = bambu?.plateCount ?? (projectPlates > 0 ? projectPlates : undefined);
+
+  if (!bambu && projectPlates === 0) {
     return [];
   }
 
   const rows: MetaRow[] = [];
   const filaments = resolveFilaments(bambu);
 
-  if (bambu.printer) {
+  if (bambu?.printer) {
     rows.push({ label: "Printer", value: bambu.printer });
   }
-  if (bambu.nozzle) {
+  if (bambu?.nozzle) {
     rows.push({ label: "Nozzle", value: bambu.nozzle });
   }
-      if (filaments.length > 0) {
+  if (filaments.length > 0) {
     rows.push({
       label: "Filaments",
       value: <FilamentSwatches filaments={filaments} showLabel={false} />,
     });
   }
-  if (bambu.layerHeight) {
+  if (bambu?.layerHeight) {
     rows.push({ label: "Layer height", value: bambu.layerHeight });
   }
-  if (bambu.infill) {
+  if (bambu?.infill) {
     rows.push({ label: "Infill", value: bambu.infill });
   }
-  if (typeof bambu.weightGrams === "number") {
+  if (typeof bambu?.weightGrams === "number") {
     rows.push({ label: "Weight", value: `${bambu.weightGrams.toFixed(1)} g` });
   }
-  if (typeof bambu.estimatedTimeSeconds === "number") {
+  if (typeof bambu?.estimatedTimeSeconds === "number") {
     const formatted = formatEstimatedPrintTime(bambu.estimatedTimeSeconds);
     if (formatted) {
       rows.push({ label: "Estimated time", value: formatted });
     }
   }
-  if (typeof bambu.plateCount === "number" && bambu.plateCount > 0) {
+  if (typeof plateCount === "number" && plateCount > 0) {
     rows.push({
       label: "Plates",
-      value: String(bambu.plateCount),
+      value: String(plateCount),
     });
   }
 

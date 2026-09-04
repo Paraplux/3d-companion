@@ -2,7 +2,7 @@ use std::path::Path;
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::library::analysis::thumbnail_absolute;
+use crate::library::analysis::{resolve_threemf_paths, thumbnail_absolute};
 use crate::library::models::{AnalysisStatus, LibraryFile};
 use crate::library::util::now_ms;
 use crate::repositories::metadata::{parse_payload, split_payload};
@@ -47,6 +47,7 @@ fn map_library_file(
     let metadata_json: Option<String> = row.get(12)?;
     let payload = parse_payload(metadata_json.as_deref().unwrap_or("{}"));
     let (stl, threemf) = split_payload(payload);
+    let threemf = threemf.map(|meta| resolve_threemf_paths(meta, thumbnails_dir));
 
     Ok(LibraryFile {
         library_file_id: row.get(0)?,

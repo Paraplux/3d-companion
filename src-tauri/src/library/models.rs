@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Bump when parsers / thumbnail pipeline change so stale cache is regenerated.
-pub const ANALYSIS_VERSION: i64 = 1;
+pub const ANALYSIS_VERSION: i64 = 2;
 
 pub const SUPPORTED_EXTENSIONS: &[&str] = &["stl", "3mf", "obj", "step", "stp"];
 
@@ -156,10 +156,57 @@ pub struct BambuMetadata {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ThreeMfObject {
+    /// Object id from the 3MF package (stable within this project).
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Optional package-relative mesh path (e.g. `3D/Objects/object_1.model`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mesh_path: Option<String>,
+    /// Build-item transform as 12 or 16 floats when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform: Option<Vec<f32>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreeMfPlate {
+    /// Stable plate id within this 3MF project (not LibraryFileId / ContentHash).
+    pub id: String,
+    /// 1-based display order.
+    pub index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Thumbnail path under the app thumbnails directory (absolute in API responses).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thumbnail_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub objects: Vec<ThreeMfObject>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimated_time_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight_grams: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreeMfProject {
+    /// Thumbnail path under the app thumbnails directory (absolute in API responses).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thumbnail_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plates: Vec<ThreeMfPlate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ThreeMfMetadata {
     pub is_bambu: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bambu: Option<BambuMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<ThreeMfProject>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

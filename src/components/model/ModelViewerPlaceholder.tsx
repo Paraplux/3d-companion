@@ -6,19 +6,33 @@ type ModelViewerPlaceholderProps = {
   file: LibraryFile;
 };
 
+function resolvePreviewSrc(file: LibraryFile): string | null {
+  const projectThumb = file.threemf?.project?.thumbnailPath;
+  if (projectThumb) {
+    return convertFileSrc(projectThumb);
+  }
+  if (file.thumbnailPath) {
+    return convertFileSrc(file.thumbnailPath);
+  }
+  return null;
+}
+
 /**
- * Temporary preview surface for Phase 5.0.
- * Phase 5.1 replaces this with the real ModelViewer without changing page layout.
+ * Temporary preview surface for Phase 5.0 / 5.1.
+ * Phase 5.2+ replaces this with the real ModelViewer without changing page layout.
  */
 export function ModelViewerPlaceholder({ file }: ModelViewerPlaceholderProps) {
-  const thumbnailSrc = file.thumbnailPath ? convertFileSrc(file.thumbnailPath) : null;
+  const previewSrc = resolvePreviewSrc(file);
+  const plateCount = file.threemf?.project?.plates?.length
+    ?? file.threemf?.bambu?.plateCount
+    ?? 0;
 
   return (
     <div className="model-viewer-placeholder" aria-label="3D preview">
-      {thumbnailSrc ? (
+      {previewSrc ? (
         <img
           className="model-viewer-placeholder__thumb"
-          src={thumbnailSrc}
+          src={previewSrc}
           alt=""
           loading="lazy"
         />
@@ -28,6 +42,11 @@ export function ModelViewerPlaceholder({ file }: ModelViewerPlaceholderProps) {
           <p className="model-viewer-placeholder__label">3D Preview</p>
         </div>
       )}
+      {plateCount > 1 ? (
+        <p className="model-viewer-placeholder__plates">
+          {plateCount} plates
+        </p>
+      ) : null}
     </div>
   );
 }
