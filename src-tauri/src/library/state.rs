@@ -1,16 +1,18 @@
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::database::Database;
 use crate::library::models::{
-    location_name_from_path, AddLibraryLocationResult, LibraryEvent, LibraryFile, LibraryLocation,
-    LibrarySnapshot,
+    location_name_from_path, AddLibraryLocationResult, BackgroundTasksEvent, LibraryEvent,
+    LibraryFile, LibraryLocation, LibrarySnapshot,
 };
 use crate::library::persistence::{canonicalize_dir, load_locations, migrate_legacy_locations};
-use crate::library::reconcile::reconcile_location;
+use crate::library::reconcile::{reconcile_location, AnalysisRequest};
+use crate::library::tasks::TaskManager;
 use crate::library::watcher::LibraryWatcher;
 use crate::repositories::files::{delete_by_location_path, list_files};
 use crate::repositories::locations::{
@@ -20,20 +22,40 @@ use crate::repositories::locations::{
 pub struct LibraryState {
     db: Arc<Database>,
     watcher: LibraryWatcher,
+    tasks: TaskManager,
+    thumbnails_dir: PathBuf,
     initialized: AtomicBool,
 }
 
 impl LibraryState {
-    pub fn new(db: Database) -> Self {
-        Self {
+    pub fn new(app: &AppHandle, db: Database) -> Result<Self, String> {
+        let data_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|error| format!("Could not resolve app data directory: {error}"))?;
+        let thumbnails_dir = data_dir.join("thumbnails");
+        std::fs::create_dir_all(&thumbnails_dir)
+            .map_err(|error| format!("Could not create thumbnails directory: {error}"))?;
+
+        Ok(Self {
             db: Arc::new(db),
             watcher: LibraryWatcher::new(),
+            tasks: TaskManager::new(),
+            thumbnails_dir,
             initialized: AtomicBool::new(false),
-        }
+        })
     }
 
     pub fn db(&self) -> Arc<Database> {
         Arc::clone(&self.db)
+    }
+
+    pub fn background_tasks(&self) -> BackgroundTasksEvent {
+        self.tasks.snapshot()
+    }
+
+    pub fn enqueue_analysis(&self, app: &AppHandle, requests: Vec<AnalysisRequest>) {
+        self.tasks.enqueue_many(app, requests);
     }
 
     pub fn bootstrap(&self, app: &AppHandle) -> Result<LibrarySnapshot, String> {
@@ -41,11 +63,16 @@ impl LibraryState {
 
         if first_boot {
             migrate_legacy_locations(app, &self.db)?;
-            self.watcher.start(app.clone(), Arc::clone(&self.db));
+            self.watcher
+                .start(app.clone(), Arc::clone(&self.db), self.thumbnails_dir.clone());
+            self.tasks
+                .start(app.clone(), Arc::clone(&self.db), self.thumbnails_dir.clone());
         }
 
         let locations = load_locations(&self.db)?;
-        let files = self.db.with_conn(list_files)?;
+        let files = self
+            .db
+            .with_conn(|conn| list_files(conn, &self.thumbnails_dir))?;
 
         for location in &locations {
             self.watcher.watch(&location.path);
@@ -53,6 +80,8 @@ impl LibraryState {
 
         if first_boot && !locations.is_empty() {
             self.spawn_full_reconciliation(app.clone(), locations.clone());
+        } else if first_boot {
+            self.enqueue_pending(app);
         }
 
         Ok(LibrarySnapshot {
@@ -67,7 +96,8 @@ impl LibraryState {
     }
 
     pub fn list_files(&self) -> Result<Vec<LibraryFile>, String> {
-        self.db.with_conn(list_files)
+        self.db
+            .with_conn(|conn| list_files(conn, &self.thumbnails_dir))
     }
 
     pub fn add_location(
@@ -86,8 +116,9 @@ impl LibraryState {
             insert_location(conn, &canonical, &name)
         })?;
 
-        let files = reconcile_location(&self.db, &canonical)?;
+        let (files, requests) = reconcile_location(&self.db, &canonical, &self.thumbnails_dir)?;
         self.watcher.watch(&canonical);
+        self.enqueue_analysis(app, requests);
 
         let _ = app.emit(
             "library://changed",
@@ -107,7 +138,6 @@ impl LibraryState {
                 return Err("That folder is not in your library.".into());
             }
 
-            // Index rows only — never cascade into projects/tags/favorites/notes.
             delete_by_location_path(conn, &path)?;
             Ok(())
         })?;
@@ -124,7 +154,7 @@ impl LibraryState {
         Ok(())
     }
 
-    pub fn rescan_location(&self, path: &str) -> Result<Vec<LibraryFile>, String> {
+    pub fn rescan_location(&self, app: &AppHandle, path: &str) -> Result<Vec<LibraryFile>, String> {
         let exists = self
             .db
             .with_conn(|conn| Ok(find_location_by_path(conn, path)?.is_some()))?;
@@ -133,13 +163,17 @@ impl LibraryState {
             return Err("That folder is not in your library.".into());
         }
 
-        reconcile_location(&self.db, path)
+        let (files, requests) = reconcile_location(&self.db, path, &self.thumbnails_dir)?;
+        self.enqueue_analysis(app, requests);
+        Ok(files)
     }
 
-    pub fn rescan_all(&self) -> Result<Vec<LibraryFile>, String> {
+    pub fn rescan_all(&self, app: &AppHandle) -> Result<Vec<LibraryFile>, String> {
         let locations = self.list_locations()?;
         for location in &locations {
-            reconcile_location(&self.db, &location.path)?;
+            let (_files, requests) =
+                reconcile_location(&self.db, &location.path, &self.thumbnails_dir)?;
+            self.enqueue_analysis(app, requests);
         }
         self.list_files()
     }
@@ -150,16 +184,40 @@ impl LibraryState {
             return self.list_files();
         }
 
-        self.db
-            .with_conn(|conn| crate::repositories::files::search_files(conn, trimmed))
+        self.db.with_conn(|conn| {
+            crate::repositories::files::search_files(conn, trimmed, &self.thumbnails_dir)
+        })
+    }
+
+    fn enqueue_pending(&self, app: &AppHandle) {
+        if let Ok(pending) = self
+            .db
+            .with_conn(crate::repositories::files::files_needing_analysis)
+        {
+            let requests = pending
+                .into_iter()
+                .map(|(library_file_id, path, extension, name)| AnalysisRequest {
+                    library_file_id,
+                    path,
+                    extension,
+                    name,
+                })
+                .collect();
+            self.enqueue_analysis(app, requests);
+        }
     }
 
     fn spawn_full_reconciliation(&self, app: AppHandle, locations: Vec<LibraryLocation>) {
         let db = Arc::clone(&self.db);
+        let thumbnails_dir = self.thumbnails_dir.clone();
+
         thread::spawn(move || {
             for location in &locations {
-                match reconcile_location(&db, &location.path) {
-                    Ok(files) => {
+                match reconcile_location(&db, &location.path, &thumbnails_dir) {
+                    Ok((files, requests)) => {
+                        if let Some(state) = app.try_state::<LibraryState>() {
+                            state.enqueue_analysis(&app, requests);
+                        }
                         let _ = app.emit(
                             "library://changed",
                             LibraryEvent::LocationUpdated {
@@ -172,7 +230,7 @@ impl LibraryState {
                 }
             }
 
-            if let Ok(files) = db.with_conn(list_files) {
+            if let Ok(files) = db.with_conn(|conn| list_files(conn, &thumbnails_dir)) {
                 let _ = app.emit(
                     "library://changed",
                     LibraryEvent::ReconciliationFinished { files },

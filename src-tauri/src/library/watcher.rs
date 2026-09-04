@@ -1,16 +1,17 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::database::Database;
 use crate::library::models::LibraryEvent;
 use crate::library::reconcile::reconcile_location;
+use crate::library::state::LibraryState;
 
 #[derive(Debug)]
 enum WatchCommand {
@@ -29,7 +30,7 @@ impl LibraryWatcher {
         }
     }
 
-    pub fn start(&self, app: AppHandle, db: Arc<Database>) {
+    pub fn start(&self, app: AppHandle, db: Arc<Database>, thumbnails_dir: PathBuf) {
         let mut guard = match self.command_tx.lock() {
             Ok(guard) => guard,
             Err(_) => return,
@@ -50,6 +51,7 @@ impl LibraryWatcher {
             let pending_for_debounce = Arc::clone(&pending);
             let app_for_debounce = app.clone();
             let db_for_debounce = Arc::clone(&db);
+            let thumbnails_dir = thumbnails_dir.clone();
 
             thread::spawn(move || loop {
                 match event_rx.recv() {
@@ -71,8 +73,16 @@ impl LibraryWatcher {
                         };
 
                         for location_path in locations {
-                            match reconcile_location(&db_for_debounce, &location_path) {
-                                Ok(files) => {
+                            match reconcile_location(
+                                &db_for_debounce,
+                                &location_path,
+                                &thumbnails_dir,
+                            ) {
+                                Ok((files, requests)) => {
+                                    if let Some(state) = app_for_debounce.try_state::<LibraryState>()
+                                    {
+                                        state.enqueue_analysis(&app_for_debounce, requests);
+                                    }
                                     let _ = app_for_debounce.emit(
                                         "library://changed",
                                         LibraryEvent::LocationUpdated {

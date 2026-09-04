@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AddLibraryLocationResult,
+  BackgroundTasksEvent,
   Collection,
   LibraryFile,
   LibraryLocation,
@@ -51,6 +52,10 @@ export function getCollections(): Promise<Collection[]> {
 
 export function getTags(): Promise<Tag[]> {
   return invoke("get_tags");
+}
+
+export function getBackgroundTasks(): Promise<BackgroundTasksEvent> {
+  return invoke("get_background_tasks");
 }
 
 export function toUserError(error: unknown, fallback: string): string {

@@ -2,7 +2,7 @@
  * Local index / filesystem DTOs returned by Tauri commands.
  *
  * Physical scan fields are machine-local. Logical identity is `libraryFileId`.
- * See docs/architecture.md.
+ * Derived metadata / thumbnails are local regenerable cache.
  */
 
 import type { ContentHash, LibraryFileId } from "@/types/libraryData";
@@ -11,6 +11,51 @@ export type LibraryLocation = {
   id: string;
   path: string;
   name: string;
+};
+
+export type AnalysisStatus = "pending" | "analyzing" | "ready" | "error";
+
+export type Vec3 = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+export type BoundingBox = {
+  min: Vec3;
+  max: Vec3;
+};
+
+export type StlMetadata = {
+  encoding: string;
+  triangleCount: number;
+  boundingBox: BoundingBox;
+  dimensionsMm: Vec3;
+  volumeMm3?: number;
+};
+
+export type FilamentInfo = {
+  material?: string;
+  color?: string;
+};
+
+export type BambuMetadata = {
+  printer?: string;
+  nozzle?: string;
+  layerHeight?: string;
+  filament?: string;
+  color?: string;
+  colors?: string[];
+  filaments?: FilamentInfo[];
+  infill?: string;
+  plateCount?: number;
+  estimatedTimeSeconds?: number;
+  weightGrams?: number;
+};
+
+export type ThreeMfMetadata = {
+  isBambu: boolean;
+  bambu?: BambuMetadata;
 };
 
 /**
@@ -27,6 +72,11 @@ export type LibraryFile = {
   modifiedAt: number;
   relativePath: string;
   locationPath: string;
+  analysisStatus: AnalysisStatus;
+  analysisError?: string;
+  thumbnailPath?: string;
+  stl?: StlMetadata;
+  threemf?: ThreeMfMetadata;
 };
 
 /** @deprecated Prefer LibraryFile — kept as an alias during Phase 3. */
@@ -56,7 +106,29 @@ export type LibraryEvent =
   | {
       type: "reconciliationFinished";
       files: LibraryFile[];
+    }
+  | {
+      type: "fileAnalyzed";
+      file: LibraryFile;
     };
+
+export type BackgroundTaskType = "hashing" | "analyzing" | "thumbnail";
+export type BackgroundTaskStatus = "queued" | "running" | "completed" | "error";
+
+export type BackgroundTask = {
+  id: string;
+  type: BackgroundTaskType;
+  status: BackgroundTaskStatus;
+  progress?: number;
+  label: string;
+  error?: string;
+};
+
+export type BackgroundTasksEvent = {
+  tasks: BackgroundTask[];
+  activeCount: number;
+  label?: string;
+};
 
 export type Project = {
   id: string;

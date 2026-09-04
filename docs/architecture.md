@@ -138,24 +138,26 @@ Intended on-disk shape (future), versioned JSON such as `library.json`:
 
 - Project, Collection, Tag, Favorite, Note, Relations
 
-**Recompute locally (derived — later cached in SQLite):**
+**Recompute locally (derived — cached in SQLite + AppData):**
 
 - filename, absolute path, size, modified date  
-- thumbnails, STL/3MF parsed metadata  
-- any other scan/index fields
+- `contentHash` (SHA-256)  
+- analysis status / version  
+- thumbnails (`{appData}/thumbnails/{contentHash}.webp`)  
+- STL/3MF parsed metadata (JSON blob in `file_metadata`)  
+- Bambu-specific fields when reliably detected  
+
+Thumbnails and derived metadata are a **local regenerable cache**. Deleting them must not lose user organization.
 
 ---
 
-## 3. Local SQLite (not yet implemented)
+## 3. Local SQLite
 
-Each computer will own its **own** SQLite database as a **local index**:
+Each computer owns its **own** SQLite database as a **local index** (`library.db` under App Data).
 
-```
-Library Data  ──►  MacBook SQLite
-Library Data  ──►  iMac SQLite
-```
+Schema includes physical file rows (`files`) and regenerable analysis cache (`file_metadata`).
 
-SQLite will hold derived / query-friendly data joined with local paths discovered by the scanner.
+User-organization tables reference `library_file_id` without FK cascade onto physical rows, so relations survive temporary absence and content edits.
 
 ### Why SQLite must never be synced directly
 

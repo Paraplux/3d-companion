@@ -4,9 +4,9 @@ mod repositories;
 
 use database::Database;
 use library::{
-    add_library_location, get_collections, get_library_files, get_library_locations,
-    get_library_snapshot, get_projects, get_tags, remove_library_location, scan_library,
-    scan_library_location, search_library_files, LibraryState,
+    add_library_location, get_background_tasks, get_collections, get_library_files,
+    get_library_locations, get_library_snapshot, get_projects, get_tags, remove_library_location,
+    scan_library, scan_library_location, search_library_files, LibraryState,
 };
 use tauri::Manager;
 
@@ -17,7 +17,9 @@ pub fn run() {
         .setup(|app| {
             let db = Database::open(app.handle())
                 .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
-            app.manage(LibraryState::new(db));
+            let state = LibraryState::new(app.handle(), db)
+                .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
+            app.manage(state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -29,6 +31,7 @@ pub fn run() {
             scan_library_location,
             scan_library,
             search_library_files,
+            get_background_tasks,
             get_projects,
             get_collections,
             get_tags,

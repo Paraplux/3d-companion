@@ -107,6 +107,21 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setFiles(payload.files);
         setScanning(false);
         setScanningLabel(null);
+        return;
+      }
+
+      if (payload.type === "fileAnalyzed") {
+        setFiles((current) => {
+          const index = current.findIndex(
+            (file) => file.libraryFileId === payload.file.libraryFileId,
+          );
+          if (index === -1) {
+            return [...current, payload.file];
+          }
+          const next = current.slice();
+          next[index] = payload.file;
+          return next;
+        });
       }
     }).then((fn) => {
       unlisten = fn;

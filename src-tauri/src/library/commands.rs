@@ -1,6 +1,8 @@
 use tauri::{AppHandle, State};
 
-use crate::library::models::{AddLibraryLocationResult, LibraryFile, LibraryLocation, LibrarySnapshot};
+use crate::library::models::{
+    AddLibraryLocationResult, BackgroundTasksEvent, LibraryFile, LibraryLocation, LibrarySnapshot,
+};
 use crate::library::state::LibraryState;
 use crate::repositories::collections::{list_collections, Collection};
 use crate::repositories::projects::{list_projects, Project};
@@ -46,15 +48,19 @@ pub fn remove_library_location(
 
 #[tauri::command]
 pub fn scan_library_location(
+    app: AppHandle,
     state: State<'_, LibraryState>,
     path: String,
 ) -> Result<Vec<LibraryFile>, String> {
-    state.rescan_location(&path)
+    state.rescan_location(&app, &path)
 }
 
 #[tauri::command]
-pub fn scan_library(state: State<'_, LibraryState>) -> Result<Vec<LibraryFile>, String> {
-    state.rescan_all()
+pub fn scan_library(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+) -> Result<Vec<LibraryFile>, String> {
+    state.rescan_all(&app)
 }
 
 #[tauri::command]
@@ -63,6 +69,13 @@ pub fn search_library_files(
     query: String,
 ) -> Result<Vec<LibraryFile>, String> {
     state.search_files(&query)
+}
+
+#[tauri::command]
+pub fn get_background_tasks(
+    state: State<'_, LibraryState>,
+) -> Result<BackgroundTasksEvent, String> {
+    Ok(state.background_tasks())
 }
 
 #[tauri::command]
