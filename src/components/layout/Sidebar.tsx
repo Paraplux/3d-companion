@@ -19,6 +19,7 @@ export function Sidebar() {
           <NavLink
             key={to}
             to={to}
+            end={to !== "/library"}
             className={({ isActive }) =>
               isActive ? "sidebar__link is-active" : "sidebar__link"
             }

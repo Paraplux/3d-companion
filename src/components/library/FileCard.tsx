@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { EcosystemIcon } from "@/components/library/EcosystemIcon";
 import { FilamentSwatches } from "@/components/library/FilamentSwatches";
@@ -5,7 +6,11 @@ import { FileFormatBadge } from "@/components/library/FileFormatBadge";
 import { FileTypeBadge } from "@/components/library/FileTypeBadge";
 import { getFileEcosystem, getFileFormat } from "@/lib/filePresentation";
 import { resolveFilaments } from "@/lib/filaments";
-import { formatBytes, formatRelativePath } from "@/lib/format";
+import {
+  displayNameFromFilename,
+  formatBytes,
+  formatRelativePath,
+} from "@/lib/format";
 import type { LibraryFile } from "@/types/library";
 
 type FileCardProps = {
@@ -68,7 +73,7 @@ export function FileCard({
     ? [locationName, formatRelativePath(file.relativePath)].filter(Boolean).join(" / ")
     : formatRelativePath(file.relativePath);
 
-  const displayName = file.name.replace(/\.[^.]+$/, "");
+  const displayName = displayNameFromFilename(file.name);
   const thumbnailSrc = file.thumbnailPath ? convertFileSrc(file.thumbnailPath) : null;
   const format = getFileFormat(file);
   const ecosystem = getFileEcosystem(file);
@@ -86,7 +91,11 @@ export function FileCard({
     file.analysisStatus === "pending" || file.analysisStatus === "analyzing";
 
   return (
-    <article className="file-card" title={file.path}>
+    <Link
+      to={`/library/file/${file.libraryFileId}`}
+      className="file-card"
+      title={file.path}
+    >
       <div className="file-card__preview">
         {thumbnailSrc ? (
           <img
@@ -136,6 +145,6 @@ export function FileCard({
 
         {showPath ? <p className="file-card__path">{pathLabel}</p> : null}
       </div>
-    </article>
+    </Link>
   );
 }

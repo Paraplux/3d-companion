@@ -10,6 +10,8 @@ const MAX_VISIBLE_SWATCHES = 4;
 
 type FilamentSwatchesProps = {
   filaments: FilamentInfo[];
+  /** When false, omit the inline "Filaments" label (useful in labeled metadata rows). */
+  showLabel?: boolean;
 };
 
 function FilamentListTooltip({ filaments }: { filaments: FilamentInfo[] }) {
@@ -52,7 +54,10 @@ function SwatchTooltip({ filament }: { filament: FilamentInfo }) {
   );
 }
 
-export function FilamentSwatches({ filaments }: FilamentSwatchesProps) {
+export function FilamentSwatches({
+  filaments,
+  showLabel = true,
+}: FilamentSwatchesProps) {
   if (filaments.length === 0) {
     return null;
   }
@@ -64,9 +69,11 @@ export function FilamentSwatches({ filaments }: FilamentSwatchesProps) {
 
   return (
     <div className="filament-row" aria-label={groupLabel}>
-      <HoverTooltip content={<FilamentListTooltip filaments={filaments} />}>
-        <span className="filament-row__label">Filaments</span>
-      </HoverTooltip>
+      {showLabel ? (
+        <HoverTooltip content={<FilamentListTooltip filaments={filaments} />}>
+          <span className="filament-row__label">Filaments</span>
+        </HoverTooltip>
+      ) : null}
 
       <div className="filament-row__swatches" role="list" aria-label={groupLabel}>
         {visible.map((filament, index) => (
