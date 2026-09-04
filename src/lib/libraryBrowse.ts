@@ -1,0 +1,133 @@
+import type { LibraryFile, LibraryLocation, SortDirection, SortField } from "@/types/library";
+
+export type FolderEntry = {
+  name: string;
+  relativeDir: string;
+  locationPath: string;
+  itemCount: number;
+};
+
+export function parentRelativeDir(relativeDir: string): string {
+  const index = relativeDir.lastIndexOf("/");
+  return index === -1 ? "" : relativeDir.slice(0, index);
+}
+
+export function fileParentDir(relativePath: string): string {
+  const index = relativePath.lastIndexOf("/");
+  return index === -1 ? "" : relativePath.slice(0, index);
+}
+
+export function collectFolders(
+  files: LibraryFile[],
+  locationPath: string,
+  relativeDir: string,
+): FolderEntry[] {
+  const prefix = relativeDir ? `${relativeDir}/` : "";
+  const folders = new Map<string, FolderEntry>();
+
+  for (const file of files) {
+    if (file.locationPath !== locationPath) {
+      continue;
+    }
+
+    if (relativeDir && !file.relativePath.startsWith(prefix)) {
+      continue;
+    }
+
+    const rest = relativeDir
+      ? file.relativePath.slice(prefix.length)
+      : file.relativePath;
+    const slash = rest.indexOf("/");
+    if (slash === -1) {
+      continue;
+    }
+
+    const name = rest.slice(0, slash);
+    const nextRelativeDir = relativeDir ? `${relativeDir}/${name}` : name;
+    const existing = folders.get(name);
+
+    if (existing) {
+      existing.itemCount += 1;
+    } else {
+      folders.set(name, {
+        name,
+        relativeDir: nextRelativeDir,
+        locationPath,
+        itemCount: 1,
+      });
+    }
+  }
+
+  return [...folders.values()].sort((left, right) =>
+    left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+  );
+}
+
+export function filesInDir(
+  files: LibraryFile[],
+  locationPath: string,
+  relativeDir: string,
+): LibraryFile[] {
+  return files.filter(
+    (file) =>
+      file.locationPath === locationPath &&
+      fileParentDir(file.relativePath) === relativeDir,
+  );
+}
+
+export function filterFiles(files: LibraryFile[], query: string): LibraryFile[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return files;
+  }
+
+  return files.filter((file) => {
+    const haystack = `${file.name} ${file.extension} ${file.relativePath}`.toLowerCase();
+    return haystack.includes(normalized);
+  });
+}
+
+export function sortFiles(
+  files: LibraryFile[],
+  field: SortField,
+  direction: SortDirection,
+): LibraryFile[] {
+  const sorted = [...files].sort((left, right) => {
+    let comparison = 0;
+
+    switch (field) {
+      case "name":
+        comparison = left.name.localeCompare(right.name, undefined, {
+          sensitivity: "base",
+        });
+        break;
+      case "modifiedAt":
+        comparison = left.modifiedAt - right.modifiedAt;
+        break;
+      case "size":
+        comparison = left.size - right.size;
+        break;
+      case "type":
+        comparison = left.extension.localeCompare(right.extension, undefined, {
+          sensitivity: "base",
+        });
+        if (comparison === 0) {
+          comparison = left.name.localeCompare(right.name, undefined, {
+            sensitivity: "base",
+          });
+        }
+        break;
+    }
+
+    return direction === "asc" ? comparison : -comparison;
+  });
+
+  return sorted;
+}
+
+export function locationByPath(
+  locations: LibraryLocation[],
+  path: string,
+): LibraryLocation | undefined {
+  return locations.find((location) => location.path === path);
+}

@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import { LibraryProvider } from "@/hooks/useLibrary";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { applyResolvedTheme, readStoredTheme, resolveTheme } from "@/lib/theme";
 import "./styles/global.css";
@@ -18,7 +19,9 @@ createRoot(root).render(
   <StrictMode>
     <BrowserRouter>
       <ThemeProvider>
-        <App />
+        <LibraryProvider>
+          <App />
+        </LibraryProvider>
       </ThemeProvider>
     </BrowserRouter>
   </StrictMode>,
