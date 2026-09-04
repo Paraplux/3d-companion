@@ -1,13 +1,18 @@
+import { lazy, Suspense } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { EcosystemIcon } from "@/components/library/EcosystemIcon";
 import { FileFormatBadge } from "@/components/library/FileFormatBadge";
 import { ModelFileInfo } from "@/components/model/ModelFileInfo";
 import { ModelMetadata } from "@/components/model/ModelMetadata";
-import { ModelViewerPlaceholder } from "@/components/model/ModelViewerPlaceholder";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useLibrary } from "@/hooks/useLibrary";
 import { getFileEcosystem, getFileFormat } from "@/lib/filePresentation";
 import { displayNameFromFilename } from "@/lib/format";
+
+const ModelViewer = lazy(async () => {
+  const module = await import("@/components/model/ModelViewer");
+  return { default: module.ModelViewer };
+});
 
 export function ModelDetailPage() {
   const { fileId } = useParams<{ fileId: string }>();
@@ -71,7 +76,15 @@ export function ModelDetailPage() {
       </header>
 
       <div className="model-detail__body">
-        <ModelViewerPlaceholder file={file} />
+        <Suspense
+          fallback={
+            <div className="model-viewer model-viewer--message">
+              <p>Loading 3D preview…</p>
+            </div>
+          }
+        >
+          <ModelViewer file={file} />
+        </Suspense>
 
         <div className="model-detail__identity">
           {(format || ecosystem) && (

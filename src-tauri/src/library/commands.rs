@@ -92,3 +92,13 @@ pub fn get_collections(state: State<'_, LibraryState>) -> Result<Vec<Collection>
 pub fn get_tags(state: State<'_, LibraryState>) -> Result<Vec<Tag>, String> {
     state.db().with_conn(list_tags)
 }
+
+#[tauri::command]
+pub fn get_model_geometry(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    library_file_id: String,
+    plate_id: Option<String>,
+) -> Result<crate::library::geometry::ModelGeometryResponse, String> {
+    state.get_model_geometry(&app, &library_file_id, plate_id)
+}

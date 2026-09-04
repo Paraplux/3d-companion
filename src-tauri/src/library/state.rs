@@ -238,4 +238,28 @@ impl LibraryState {
             }
         });
     }
+
+    pub fn get_model_geometry(
+        &self,
+        app: &AppHandle,
+        library_file_id: &str,
+        plate_id: Option<String>,
+    ) -> Result<crate::library::geometry::ModelGeometryResponse, String> {
+        let file = self
+            .db
+            .with_conn(|conn| {
+                crate::repositories::files::get_file(conn, library_file_id, &self.thumbnails_dir)
+            })?
+            .ok_or_else(|| "Model not found.".to_string())?;
+
+        let data_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|error| format!("Could not resolve app data directory: {error}"))?;
+        let cache_dir = crate::library::geometry::geometry_cache_dir(&data_dir);
+        std::fs::create_dir_all(&cache_dir)
+            .map_err(|error| format!("Could not create geometry cache: {error}"))?;
+
+        crate::library::geometry::load_model_geometry(&file, plate_id.as_deref(), &cache_dir)
+    }
 }

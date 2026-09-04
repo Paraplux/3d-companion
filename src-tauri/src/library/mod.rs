@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod commands;
+pub mod geometry;
 pub mod models;
 pub mod persistence;
 pub mod reconcile;

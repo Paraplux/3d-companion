@@ -5,8 +5,9 @@ mod repositories;
 use database::Database;
 use library::{
     add_library_location, get_background_tasks, get_collections, get_library_files,
-    get_library_locations, get_library_snapshot, get_projects, get_tags, remove_library_location,
-    scan_library, scan_library_location, search_library_files, LibraryState,
+    get_library_locations, get_library_snapshot, get_model_geometry, get_projects, get_tags,
+    remove_library_location, scan_library, scan_library_location, search_library_files,
+    LibraryState,
 };
 use tauri::Manager;
 
@@ -35,6 +36,7 @@ pub fn run() {
             get_projects,
             get_collections,
             get_tags,
+            get_model_geometry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

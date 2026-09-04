@@ -788,7 +788,7 @@ fn extract_mesh(
     Ok(mesh)
 }
 
-fn append_model_mesh(mesh: &mut Mesh, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn append_model_mesh(mesh: &mut Mesh, bytes: &[u8]) -> Result<(), String> {
     let text = String::from_utf8_lossy(bytes);
     let mut reader = Reader::from_str(&text);
     reader.config_mut().trim_text(true);
@@ -854,7 +854,10 @@ fn append_model_mesh(mesh: &mut Mesh, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-fn read_zip_entry(archive: &mut ZipArchive<std::fs::File>, name: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn read_zip_entry(
+    archive: &mut ZipArchive<std::fs::File>,
+    name: &str,
+) -> Result<Vec<u8>, String> {
     let index = (0..archive.len())
         .find(|&i| {
             archive

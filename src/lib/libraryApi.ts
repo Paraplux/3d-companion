@@ -58,6 +58,16 @@ export function getBackgroundTasks(): Promise<BackgroundTasksEvent> {
   return invoke("get_background_tasks");
 }
 
+export function getModelGeometry(
+  libraryFileId: string,
+  plateId?: string | null,
+): Promise<import("@/types/geometry").ModelGeometryResponse> {
+  return invoke("get_model_geometry", {
+    libraryFileId,
+    plateId: plateId ?? null,
+  });
+}
+
 export function toUserError(error: unknown, fallback: string): string {
   if (typeof error === "string" && error.trim()) {
     return error;
