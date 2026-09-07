@@ -108,7 +108,8 @@ export function ModelViewer({ file }: ModelViewerProps) {
               rotateSpeed={0.85}
               zoomSpeed={1.15}
               panSpeed={0.9}
-              maxPolarAngle={Math.PI * 0.49}
+              minPolarAngle={0}
+              maxPolarAngle={Math.PI}
             />
           </Canvas>
         ) : null}

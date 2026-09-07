@@ -210,6 +210,21 @@ a:focus-visible {
   animation: page-in 180ms ease both;
 }
 
+.page-header--with-leading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.page-header__leading {
+  flex-shrink: 0;
+  padding-top: 0.28rem;
+}
+
+.page-header__copy {
+  min-width: 0;
+}
+
 .page-header__title {
   margin: 0;
   font-size: 1.55rem;
@@ -224,6 +239,14 @@ a:focus-visible {
   font-size: 0.925rem;
   font-weight: 400;
   letter-spacing: -0.01em;
+}
+
+.page-header__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-inline: 0.55rem;
+  color: var(--text-secondary);
 }
 
 .empty-state {
@@ -278,6 +301,8 @@ a:focus-visible {
   font-weight: 550;
   letter-spacing: -0.01em;
   cursor: pointer;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
   transition:
     background-color 120ms ease,
     border-color 120ms ease,
@@ -466,39 +491,11 @@ a:focus-visible {
   gap: 1rem;
 }
 
-.model-detail__header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.75rem;
-  min-height: 2rem;
-}
-
-.model-detail__back {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding-inline: 0.55rem;
-  color: var(--text-secondary);
-}
-
-.model-detail__header-title {
-  margin: 0;
+.page--model-detail .page-header__title,
+.page--model-detail .page-header__subtitle {
   overflow: hidden;
-  color: var(--text);
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-  app-region: drag;
-}
-
-.model-detail__header-actions {
-  width: 4.5rem;
-  min-height: 2rem;
-  app-region: drag;
 }
 
 .model-detail__loading {
@@ -528,6 +525,20 @@ a:focus-visible {
   background: color-mix(in srgb, var(--hover) 70%, var(--bg-elevated));
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+}
+
+.model-viewer-placeholder--activatable::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--bg-content) 22%, transparent);
+  pointer-events: none;
+}
+
+.model-viewer-placeholder__activate {
+  position: absolute;
+  z-index: 2;
 }
 
 .model-viewer {
@@ -679,31 +690,10 @@ a:focus-visible {
   letter-spacing: -0.01em;
 }
 
-.model-detail__identity {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
 .model-detail__badges {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  margin-bottom: 0.15rem;
-}
-
-.model-detail__name {
-  margin: 0;
-  font-size: 1.35rem;
-  font-weight: 650;
-  letter-spacing: -0.03em;
-  line-height: 1.2;
-}
-
-.model-detail__filename {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
 }
 
 .model-metadata {
@@ -762,15 +752,23 @@ a:focus-visible {
 
 .library-top {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem 1.25rem;
+}
+
+.library-top .page-header {
+  min-width: 10rem;
 }
 
 .library-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.55rem;
+  flex: 1 1 24rem;
 }
 
 .library-search {
