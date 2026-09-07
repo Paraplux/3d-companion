@@ -262,4 +262,14 @@ impl LibraryState {
 
         crate::library::geometry::load_model_geometry(&file, plate_id.as_deref(), &cache_dir)
     }
+
+    pub fn open_in_bambu_studio(&self, library_file_id: &str) -> Result<(), String> {
+        self.db.with_conn(|conn| {
+            crate::library::bambu_studio::open_library_file_in_bambu_studio(
+                conn,
+                &self.thumbnails_dir,
+                library_file_id,
+            )
+        })
+    }
 }

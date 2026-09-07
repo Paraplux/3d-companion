@@ -9,9 +9,9 @@ use library::{
     get_background_tasks, get_collection, get_collection_file_count, get_collection_file_ids,
     get_collections, get_favorite_ids, get_file_collection_ids, get_file_tag_ids, get_library_files,
     get_library_locations, get_library_snapshot, get_model_geometry, get_projects, get_tag_file_ids,
-    get_tags, is_favorite, remove_favorite, remove_file_from_collection, remove_file_tag,
-    remove_library_location, rename_collection, rename_tag, scan_library, scan_library_location,
-    search_library_files, LibraryState,
+    get_tags, is_favorite, open_in_bambu_studio, remove_favorite, remove_file_from_collection,
+    remove_file_tag, remove_library_location, rename_collection, rename_tag, scan_library,
+    scan_library_location, search_library_files, LibraryState,
 };
 use tauri::Manager;
 
@@ -59,6 +59,7 @@ pub fn run() {
             get_tag_file_ids,
             get_all_file_tags,
             get_model_geometry,
+            open_in_bambu_studio,
             get_favorite_ids,
             add_favorite,
             remove_favorite,

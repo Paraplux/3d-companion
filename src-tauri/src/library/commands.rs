@@ -287,6 +287,14 @@ pub fn get_model_geometry(
 }
 
 #[tauri::command]
+pub fn open_in_bambu_studio(
+    state: State<'_, LibraryState>,
+    library_file_id: String,
+) -> Result<(), String> {
+    state.open_in_bambu_studio(&library_file_id)
+}
+
+#[tauri::command]
 pub fn get_favorite_ids(state: State<'_, LibraryState>) -> Result<Vec<String>, String> {
     state.db().with_conn(list_favorite_ids)
 }

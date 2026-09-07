@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { ModelViewerPlaceholder } from "@/components/model/ModelViewerPlaceholder";
+import { OpenInBambuStudioButton } from "@/components/model/OpenInBambuStudioButton";
 import { PlateSelector } from "@/components/model/viewer/PlateSelector";
+import { canOpenInBambuStudio } from "@/lib/bambuStudio";
 import { getModelGeometry } from "@/lib/libraryApi";
 import type { LibraryFile } from "@/types/library";
 
@@ -30,6 +32,7 @@ export function ModelPreview({ file }: ModelPreviewProps) {
   const plates = file.threemf?.project?.plates ?? [];
   const initialPlateId = useMemo(() => firstPlateId(file), [file]);
   const previewable = canPreview3d(file.extension);
+  const canOpenBambu = canOpenInBambuStudio(file);
 
   const [selectedPlateId, setSelectedPlateId] = useState<string | null>(initialPlateId);
   const [viewerActive, setViewerActive] = useState(false);
@@ -83,7 +86,7 @@ export function ModelPreview({ file }: ModelPreviewProps) {
     selectedPlateId,
   ]);
 
-  const showToolbar = plates.length > 1 || previewable;
+  const showToolbar = plates.length > 1 || previewable || canOpenBambu;
 
   return (
     <div className="model-viewer">
@@ -126,6 +129,8 @@ export function ModelPreview({ file }: ModelPreviewProps) {
                 Reset
               </button>
             ) : null}
+
+            {canOpenBambu ? <OpenInBambuStudioButton file={file} /> : null}
 
             {previewable ? (
               <button

@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod bambu_studio;
 pub mod commands;
 pub mod geometry;
 pub mod models;

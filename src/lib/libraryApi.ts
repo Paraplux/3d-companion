@@ -182,6 +182,10 @@ export function getModelGeometry(
   return request;
 }
 
+export function openInBambuStudio(libraryFileId: string): Promise<void> {
+  return invoke("open_in_bambu_studio", { libraryFileId });
+}
+
 export function toUserError(error: unknown, fallback: string): string {
   if (typeof error === "string" && error.trim()) {
     return error;
