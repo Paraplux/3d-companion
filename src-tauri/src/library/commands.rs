@@ -5,6 +5,10 @@ use crate::library::models::{
 };
 use crate::library::state::LibraryState;
 use crate::repositories::collections::{list_collections, Collection};
+use crate::repositories::favorites::{
+    add_favorite as add_favorite_row, is_favorite as is_favorite_row, list_favorite_ids,
+    remove_favorite as remove_favorite_row,
+};
 use crate::repositories::projects::{list_projects, Project};
 use crate::repositories::tags::{list_tags, Tag};
 
@@ -101,4 +105,39 @@ pub fn get_model_geometry(
     plate_id: Option<String>,
 ) -> Result<crate::library::geometry::ModelGeometryResponse, String> {
     state.get_model_geometry(&app, &library_file_id, plate_id)
+}
+
+#[tauri::command]
+pub fn get_favorite_ids(state: State<'_, LibraryState>) -> Result<Vec<String>, String> {
+    state.db().with_conn(list_favorite_ids)
+}
+
+#[tauri::command]
+pub fn add_favorite(
+    state: State<'_, LibraryState>,
+    library_file_id: String,
+) -> Result<(), String> {
+    state
+        .db()
+        .with_conn(|conn| add_favorite_row(conn, &library_file_id))
+}
+
+#[tauri::command]
+pub fn remove_favorite(
+    state: State<'_, LibraryState>,
+    library_file_id: String,
+) -> Result<(), String> {
+    state
+        .db()
+        .with_conn(|conn| remove_favorite_row(conn, &library_file_id))
+}
+
+#[tauri::command]
+pub fn is_favorite(
+    state: State<'_, LibraryState>,
+    library_file_id: String,
+) -> Result<bool, String> {
+    state
+        .db()
+        .with_conn(|conn| is_favorite_row(conn, &library_file_id))
 }

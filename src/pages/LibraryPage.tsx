@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { FileCard } from "@/components/library/FileCard";
 import { FolderCard } from "@/components/library/FolderCard";
 import { LibraryBreadcrumbs } from "@/components/library/LibraryBreadcrumbs";
@@ -6,18 +7,16 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useLibrary } from "@/hooks/useLibrary";
 import {
+  browseFromSearchParams,
+  browseToSearchParams,
   collectFolders,
   filesInDir,
   locationByPath,
   parentRelativeDir,
   sortFiles,
+  type BrowseState,
 } from "@/lib/libraryBrowse";
 import type { LibraryFile, SortDirection, SortField } from "@/types/library";
-
-type BrowseState = {
-  locationPath: string | null;
-  relativeDir: string;
-};
 
 export function LibraryPage() {
   const {
@@ -33,10 +32,19 @@ export function LibraryPage() {
     search,
   } = useLibrary();
 
-  const [browse, setBrowse] = useState<BrowseState>({
-    locationPath: null,
-    relativeDir: "",
-  });
+  const [searchParams, setSearchParams] = useSearchParams();
+  const browse = useMemo(
+    () => browseFromSearchParams(searchParams),
+    [searchParams],
+  );
+
+  const setBrowse = useCallback(
+    (next: BrowseState) => {
+      setSearchParams(browseToSearchParams(next), { replace: false });
+    },
+    [setSearchParams],
+  );
+
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<LibraryFile[] | null>(null);
   const [sortField, setSortField] = useState<SortField>("name");
@@ -46,6 +54,16 @@ export function LibraryPage() {
   const currentLocation = browse.locationPath
     ? locationByPath(locations, browse.locationPath)
     : undefined;
+
+  // Drop stale folder params if the location was removed from the library.
+  useEffect(() => {
+    if (!browse.locationPath || locations.length === 0) {
+      return;
+    }
+    if (!locationByPath(locations, browse.locationPath)) {
+      setBrowse({ locationPath: null, relativeDir: "" });
+    }
+  }, [browse.locationPath, locations, setBrowse]);
 
   useEffect(() => {
     if (!isSearching) {
@@ -150,7 +168,7 @@ export function LibraryPage() {
     }
 
     return items;
-  }, [browse.relativeDir, currentLocation]);
+  }, [browse.relativeDir, currentLocation, setBrowse]);
 
   const itemCountLabel = isSearching
     ? `${visibleFiles.length} result${visibleFiles.length === 1 ? "" : "s"}`

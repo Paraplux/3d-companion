@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { EcosystemIcon } from "@/components/library/EcosystemIcon";
+import { FavoriteButton } from "@/components/library/FavoriteButton";
 import { FilamentSwatches } from "@/components/library/FilamentSwatches";
 import { FileFormatBadge } from "@/components/library/FileFormatBadge";
 import { FileTypeBadge } from "@/components/library/FileTypeBadge";
@@ -97,6 +98,7 @@ export function FileCard({
       title={file.path}
     >
       <div className="file-card__preview">
+        <FavoriteButton libraryFileId={file.libraryFileId} />
         {thumbnailSrc ? (
           <img
             className="file-card__thumb"

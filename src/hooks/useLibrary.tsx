@@ -10,18 +10,23 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import {
+  addFavorite as addFavoriteApi,
   addLibraryLocation,
+  getFavoriteIds,
   getLibrarySnapshot,
+  removeFavorite as removeFavoriteApi,
   removeLibraryLocation,
   scanLibrary,
   searchLibraryFiles,
   toUserError,
 } from "@/lib/libraryApi";
 import type { LibraryEvent, LibraryFile, LibraryLocation } from "@/types/library";
+import type { LibraryFileId } from "@/types/libraryData";
 
 type LibraryContextValue = {
   locations: LibraryLocation[];
   files: LibraryFile[];
+  favoriteIds: LibraryFileId[];
   ready: boolean;
   scanning: boolean;
   scanningLabel: string | null;
@@ -31,6 +36,10 @@ type LibraryContextValue = {
   removeFolder: (path: string) => Promise<void>;
   rescan: () => Promise<void>;
   search: (query: string) => Promise<LibraryFile[]>;
+  isFavorite: (libraryFileId: LibraryFileId) => boolean;
+  addFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
+  removeFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
+  toggleFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
 };
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
@@ -38,6 +47,7 @@ const LibraryContext = createContext<LibraryContextValue | null>(null);
 export function LibraryProvider({ children }: { children: ReactNode }) {
   const [locations, setLocations] = useState<LibraryLocation[]>([]);
   const [files, setFiles] = useState<LibraryFile[]>([]);
+  const [favoriteIds, setFavoriteIds] = useState<LibraryFileId[]>([]);
   const [ready, setReady] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanningLabel, setScanningLabel] = useState<string | null>(null);
@@ -50,12 +60,16 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
     async function bootstrap() {
       try {
-        const snapshot = await getLibrarySnapshot();
+        const [snapshot, favorites] = await Promise.all([
+          getLibrarySnapshot(),
+          getFavoriteIds(),
+        ]);
         if (cancelled) {
           return;
         }
         setLocations(snapshot.locations);
         setFiles(snapshot.files);
+        setFavoriteIds(favorites);
         setError(null);
         if (snapshot.reconciling) {
           setScanning(true);
@@ -217,10 +231,71 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     return searchLibraryFiles(query);
   }, []);
 
+  const favoriteIdSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+
+  const isFavorite = useCallback(
+    (libraryFileId: LibraryFileId) => favoriteIdSet.has(libraryFileId),
+    [favoriteIdSet],
+  );
+
+  const addFavorite = useCallback(
+    async (libraryFileId: LibraryFileId) => {
+      clearError();
+      let previous: LibraryFileId[] | null = null;
+      setFavoriteIds((current) => {
+        previous = current;
+        return current.includes(libraryFileId) ? current : [libraryFileId, ...current];
+      });
+
+      try {
+        await addFavoriteApi(libraryFileId);
+      } catch (err) {
+        if (previous) {
+          setFavoriteIds(previous);
+        }
+        setError(toUserError(err, "Could not add that favorite."));
+      }
+    },
+    [clearError],
+  );
+
+  const removeFavorite = useCallback(
+    async (libraryFileId: LibraryFileId) => {
+      clearError();
+      let previous: LibraryFileId[] | null = null;
+      setFavoriteIds((current) => {
+        previous = current;
+        return current.filter((id) => id !== libraryFileId);
+      });
+
+      try {
+        await removeFavoriteApi(libraryFileId);
+      } catch (err) {
+        if (previous) {
+          setFavoriteIds(previous);
+        }
+        setError(toUserError(err, "Could not remove that favorite."));
+      }
+    },
+    [clearError],
+  );
+
+  const toggleFavorite = useCallback(
+    async (libraryFileId: LibraryFileId) => {
+      if (favoriteIdSet.has(libraryFileId)) {
+        await removeFavorite(libraryFileId);
+        return;
+      }
+      await addFavorite(libraryFileId);
+    },
+    [addFavorite, favoriteIdSet, removeFavorite],
+  );
+
   const value = useMemo(
     () => ({
       locations,
       files,
+      favoriteIds,
       ready,
       scanning,
       scanningLabel,
@@ -230,10 +305,15 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       removeFolder,
       rescan,
       search,
+      isFavorite,
+      addFavorite,
+      removeFavorite,
+      toggleFavorite,
     }),
     [
       locations,
       files,
+      favoriteIds,
       ready,
       scanning,
       scanningLabel,
@@ -243,6 +323,10 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       removeFolder,
       rescan,
       search,
+      isFavorite,
+      addFavorite,
+      removeFavorite,
+      toggleFavorite,
     ],
   );
 

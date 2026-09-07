@@ -13,7 +13,7 @@ export function LibraryBreadcrumbs({ items }: LibraryBreadcrumbsProps) {
   }
 
   return (
-    <nav className="breadcrumbs" aria-label="Folder path">
+    <nav className="breadcrumbs" aria-label="Breadcrumb">
       {items.map((item, index) => {
         const isLast = index === items.length - 1;
 

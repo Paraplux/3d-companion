@@ -210,7 +210,8 @@ a:focus-visible {
   animation: page-in 180ms ease both;
 }
 
-.page-header--with-leading {
+.page-header--with-leading,
+.page-header--with-sides {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
@@ -219,6 +220,16 @@ a:focus-visible {
 .page-header__leading {
   flex-shrink: 0;
   padding-top: 0.28rem;
+}
+
+.page-header__trailing {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-top: 0.2rem;
+}
+
+.page-header--with-sides .page-header__copy {
+  flex: 1;
 }
 
 .page-header__copy {
@@ -491,6 +502,12 @@ a:focus-visible {
   gap: 1rem;
 }
 
+.model-detail__top {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
 .page--model-detail .page-header__title,
 .page--model-detail .page-header__subtitle {
   overflow: hidden;
@@ -498,6 +515,7 @@ a:focus-visible {
   white-space: nowrap;
 }
 
+.page-loading,
 .model-detail__loading {
   margin: 3rem auto;
   color: var(--text-secondary);
@@ -916,6 +934,67 @@ a:focus-visible {
   max-width: calc(100% - 0.9rem);
 }
 
+.favorite-button {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  background: transparent;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.favorite-button--icon {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.35rem;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.favorite-button--icon:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
+  border-color: var(--border-strong);
+}
+
+.favorite-button--icon.is-favorite {
+  color: #d4a017;
+  border-color: color-mix(in srgb, #d4a017 35%, var(--border));
+  background: color-mix(in srgb, var(--bg-elevated) 70%, rgba(212, 160, 23, 0.18));
+}
+
+.favorite-button--label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-secondary);
+}
+
+.favorite-button--label[aria-pressed="true"] {
+  color: #d4a017;
+}
+
+.favorite-button--label:hover {
+  color: var(--text);
+}
+
+.favorite-button--label[aria-pressed="true"]:hover {
+  color: #b8860b;
+}
+
 .format-badge {
   flex-shrink: 0;
   padding: 0.14rem 0.38rem;
@@ -1322,6 +1401,7 @@ a:focus-visible {
 .library-sort select,
 .folder-card,
 .file-card,
+.favorite-button,
 .breadcrumbs__link,
 .location-list__remove {
   -webkit-app-region: no-drag;

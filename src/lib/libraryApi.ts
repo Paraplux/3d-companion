@@ -55,6 +55,18 @@ export function getTags(): Promise<Tag[]> {
   return invoke("get_tags");
 }
 
+export function getFavoriteIds(): Promise<string[]> {
+  return invoke("get_favorite_ids");
+}
+
+export function addFavorite(libraryFileId: string): Promise<void> {
+  return invoke("add_favorite", { libraryFileId });
+}
+
+export function removeFavorite(libraryFileId: string): Promise<void> {
+  return invoke("remove_favorite", { libraryFileId });
+}
+
 export function getBackgroundTasks(): Promise<BackgroundTasksEvent> {
   return invoke("get_background_tasks");
 }

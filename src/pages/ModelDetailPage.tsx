@@ -1,6 +1,9 @@
+import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { EcosystemIcon } from "@/components/library/EcosystemIcon";
+import { FavoriteButton } from "@/components/library/FavoriteButton";
 import { FileFormatBadge } from "@/components/library/FileFormatBadge";
+import { LibraryBreadcrumbs } from "@/components/library/LibraryBreadcrumbs";
 import { ModelFileInfo } from "@/components/model/ModelFileInfo";
 import { ModelMetadata } from "@/components/model/ModelMetadata";
 import { ModelPreview } from "@/components/model/ModelPreview";
@@ -9,15 +12,10 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { useLibrary } from "@/hooks/useLibrary";
 import { getFileEcosystem, getFileFormat } from "@/lib/filePresentation";
 import { displayNameFromFilename } from "@/lib/format";
-
-function goBack(navigate: ReturnType<typeof useNavigate>) {
-  const index = window.history.state?.idx;
-  if (typeof index === "number" && index > 0) {
-    navigate(-1);
-    return;
-  }
-  navigate("/library");
-}
+import {
+  fileParentDir,
+  libraryBrowseHref,
+} from "@/lib/libraryBrowse";
 
 export function ModelDetailPage() {
   const { fileId } = useParams<{ fileId: string }>();
@@ -30,6 +28,56 @@ export function ModelDetailPage() {
   const locationName = file
     ? locations.find((location) => location.path === file.locationPath)?.name
     : undefined;
+
+  const breadcrumbItems = useMemo(() => {
+    if (!file) {
+      return [];
+    }
+
+    const displayName = displayNameFromFilename(file.name);
+    const items: Array<{ label: string; onClick?: () => void }> = [
+      {
+        label: "Library",
+        onClick: () => navigate("/library"),
+      },
+    ];
+
+    if (locationName) {
+      items.push({
+        label: locationName,
+        onClick: () =>
+          navigate(
+            libraryBrowseHref({
+              locationPath: file.locationPath,
+              relativeDir: "",
+            }),
+          ),
+      });
+    }
+
+    const folderPath = fileParentDir(file.relativePath);
+    if (folderPath) {
+      const segments = folderPath.split("/").filter(Boolean);
+      let accumulated = "";
+      for (const segment of segments) {
+        accumulated = accumulated ? `${accumulated}/${segment}` : segment;
+        const relativeDir = accumulated;
+        items.push({
+          label: segment,
+          onClick: () =>
+            navigate(
+              libraryBrowseHref({
+                locationPath: file.locationPath,
+                relativeDir,
+              }),
+            ),
+        });
+      }
+    }
+
+    items.push({ label: displayName });
+    return items;
+  }, [file, locationName, navigate]);
 
   if (!ready) {
     return (
@@ -61,20 +109,16 @@ export function ModelDetailPage() {
 
   return (
     <section className="page page--model-detail">
-      <PageHeader
-        title={displayName}
-        subtitle={file.name}
-        leading={
-          <button
-            type="button"
-            className="button button--ghost page-header__back"
-            onClick={() => goBack(navigate)}
-          >
-            <BackIcon />
-            Back
-          </button>
-        }
-      />
+      <div className="model-detail__top">
+        <PageHeader
+          title={displayName}
+          subtitle={file.name}
+          trailing={
+            <FavoriteButton libraryFileId={file.libraryFileId} variant="label" />
+          }
+        />
+        <LibraryBreadcrumbs items={breadcrumbItems} />
+      </div>
 
       <div className="model-detail__body">
         <ModelPreview file={file} />
@@ -90,19 +134,5 @@ export function ModelDetailPage() {
         <ModelFileInfo file={file} locationName={locationName} />
       </div>
     </section>
-  );
-}
-
-function BackIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path
-        d="M8.5 2.5 4 7l4.5 4.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }

@@ -7,6 +7,11 @@ export type FolderEntry = {
   itemCount: number;
 };
 
+export type BrowseState = {
+  locationPath: string | null;
+  relativeDir: string;
+};
+
 export function parentRelativeDir(relativeDir: string): string {
   const index = relativeDir.lastIndexOf("/");
   return index === -1 ? "" : relativeDir.slice(0, index);
@@ -15,6 +20,45 @@ export function parentRelativeDir(relativeDir: string): string {
 export function fileParentDir(relativePath: string): string {
   const index = relativePath.lastIndexOf("/");
   return index === -1 ? "" : relativePath.slice(0, index);
+}
+
+/** Restore library folder navigation from `/library?loc=&dir=`. */
+export function browseFromSearchParams(params: URLSearchParams): BrowseState {
+  const locationPath = params.get("loc");
+  const relativeDir = params.get("dir") ?? "";
+  return {
+    locationPath: locationPath && locationPath.length > 0 ? locationPath : null,
+    relativeDir,
+  };
+}
+
+/** Serialize browse state for the Library route (empty at root). */
+export function browseToSearchParams(browse: BrowseState): URLSearchParams {
+  const params = new URLSearchParams();
+  if (browse.locationPath) {
+    params.set("loc", browse.locationPath);
+    if (browse.relativeDir) {
+      params.set("dir", browse.relativeDir);
+    }
+  }
+  return params;
+}
+
+/** Build a Library href for a browse location. */
+export function libraryBrowseHref(browse: BrowseState): string {
+  const params = browseToSearchParams(browse);
+  const query = params.toString();
+  return query ? `/library?${query}` : "/library";
+}
+
+/** Build a Library href that opens the folder containing this file. */
+export function libraryHrefForFile(
+  file: Pick<LibraryFile, "locationPath" | "relativePath">,
+): string {
+  return libraryBrowseHref({
+    locationPath: file.locationPath,
+    relativeDir: fileParentDir(file.relativePath),
+  });
 }
 
 export function collectFolders(

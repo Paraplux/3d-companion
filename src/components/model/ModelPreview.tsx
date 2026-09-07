@@ -93,7 +93,7 @@ export function ModelPreview({ file }: ModelPreviewProps) {
           <Suspense
             fallback={
               <div className="model-viewer__overlay">
-                <p>Loading 3D preview…</p>
+                <p>Loading viewer…</p>
               </div>
             }
           >
