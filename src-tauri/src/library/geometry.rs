@@ -1,25 +1,26 @@
 //! On-demand geometry extraction for the 3D viewer.
 //! Reuses STL / 3MF mesh parsers from analysis — does not persist meshes in SQLite.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
 use crate::library::analysis::mesh::Mesh;
 use crate::library::analysis::stl::analyze_stl;
 use crate::library::analysis::threemf::{
-    append_model_mesh, append_model_mesh_filtered, infer_plate_origin, read_zip_entry,
+    append_model_mesh, extract_model_meshes, infer_plate_origin, read_zip_entry,
     transform_translation_xy, translate_3mf_transform, BuildModelIndex,
 };
 use crate::library::models::{FilamentInfo, LibraryFile, ThreeMfObject, ThreeMfPlate};
 
 const MAX_TRIANGLES_PER_OBJECT: usize = 750_000;
+const GEOMETRY_CACHE_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelGeometryObject {
     pub id: String,
@@ -35,7 +36,7 @@ pub struct ModelGeometryObject {
     pub triangle_count: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelGeometryResponse {
     pub format: String,
@@ -54,9 +55,40 @@ pub fn load_model_geometry(
     cache_dir: &Path,
 ) -> Result<ModelGeometryResponse, String> {
     let extension = file.extension.to_ascii_lowercase();
-    match extension.as_str() {
-        "stl" => load_stl_geometry(file, cache_dir),
-        "3mf" => load_3mf_geometry(file, plate_id, cache_dir),
+    if extension != "stl" && extension != "3mf" {
+        return Err(format!("3D preview unavailable for {extension} files."));
+    }
+
+    let scope = cache_scope(file, plate_id)?;
+    if let Some(cached) = read_geometry_manifest(cache_dir, &file.content_hash, &scope) {
+        return Ok(cached);
+    }
+
+    let response = match extension.as_str() {
+        "stl" => load_stl_geometry(file, cache_dir)?,
+        "3mf" => load_3mf_geometry(file, plate_id, cache_dir)?,
+        _ => unreachable!(),
+    };
+    let _ = write_geometry_manifest(cache_dir, &file.content_hash, &scope, &response);
+    Ok(response)
+}
+
+fn cache_scope(file: &LibraryFile, plate_id: Option<&str>) -> Result<String, String> {
+    match file.extension.to_ascii_lowercase().as_str() {
+        "stl" => Ok("stl".into()),
+        "3mf" => {
+            let Some(threemf) = file.threemf.as_ref() else {
+                return Err("3MF analysis is not ready yet.".into());
+            };
+            if let Some(project) = threemf.project.as_ref() {
+                if project.plates.is_empty() {
+                    return Err("No plate structure found in this 3MF.".into());
+                }
+                Ok(select_plate(&project.plates, plate_id)?.id.clone())
+            } else {
+                Ok("flat".into())
+            }
+        }
         other => Err(format!("3D preview unavailable for {other} files.")),
     }
 }
@@ -144,15 +176,17 @@ fn load_3mf_geometry(
         Err(_) => BuildModelIndex::default(),
     };
 
+    struct PendingMesh {
+        id: String,
+        name: Option<String>,
+        transform: Option<Vec<f32>>,
+        color: Option<String>,
+        mesh_path: String,
+        source_object_id: Option<String>,
+    }
+
     // Expand assemblies (item × each component) before plate-local normalization.
-    let mut pending: Vec<(
-        String,
-        Option<String>,
-        Option<Vec<f32>>,
-        Option<String>,
-        String,
-        Option<String>,
-    )> = Vec::new();
+    let mut pending: Vec<PendingMesh> = Vec::new();
     for object in &source_objects {
         let instances = build_index.resolve_object(
             &object.id,
@@ -174,14 +208,14 @@ fn load_3mf_geometry(
             let color = extruders
                 .resolve(&object.id, instance.source_object_id.as_deref())
                 .and_then(|extruder| color_for_extruder(extruder, &filaments));
-            pending.push((
-                instance_id,
-                object.name.clone(),
-                instance.transform,
+            pending.push(PendingMesh {
+                id: instance_id,
+                name: object.name.clone(),
+                transform: instance.transform,
                 color,
-                instance.mesh_path,
-                instance.source_object_id,
-            ));
+                mesh_path: instance.mesh_path,
+                source_object_id: instance.source_object_id,
+            });
         }
     }
 
@@ -195,58 +229,98 @@ fn load_3mf_geometry(
     let infer_d = bed_depth_mm.unwrap_or(256.0);
     let translations: Vec<(f32, f32)> = pending
         .iter()
-        .filter_map(|entry| entry.2.as_deref().and_then(transform_translation_xy))
+        .filter_map(|entry| entry.transform.as_deref().and_then(transform_translation_xy))
         .collect();
     let (origin_x, origin_y) = infer_plate_origin(&translations, infer_w, infer_d);
 
     if origin_x != 0.0 || origin_y != 0.0 {
         for entry in &mut pending {
-            if let Some(transform) = entry.2.as_mut() {
+            if let Some(transform) = entry.transform.as_mut() {
                 translate_3mf_transform(transform, -origin_x, -origin_y, 0.0);
             }
         }
     }
 
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (index, entry) in pending.iter().enumerate() {
+        let safe_path = sanitize_zip_path(&entry.mesh_path)?;
+        groups.entry(safe_path).or_default().push(index);
+    }
+
     let mut objects = Vec::new();
-    for (id, name, transform, color, mesh_path, source_object_id) in pending {
-        let safe_path = sanitize_zip_path(&mesh_path)?;
-        let bytes = read_zip_entry(&mut archive, &safe_path)
-            .map_err(|_| format!("Could not read mesh for object {id}."))?;
+    for (mesh_path, indices) in groups {
+        let bytes = read_zip_entry(&mut archive, &mesh_path)
+            .map_err(|_| format!("Could not read mesh {mesh_path}."))?;
 
-        let mut mesh = Mesh::default();
-        append_model_mesh_filtered(&mut mesh, &bytes, source_object_id.as_deref())?;
-        if mesh.triangle_count() == 0 {
-            continue;
-        }
-        if mesh.triangle_count() > MAX_TRIANGLES_PER_OBJECT {
-            return Err(format!(
-                "Object {} is too large for 3D preview.",
-                name.as_deref().unwrap_or(&id)
-            ));
+        let mut wanted_ids = HashSet::new();
+        let mut need_all = false;
+        for &index in &indices {
+            match pending[index].source_object_id.as_ref() {
+                Some(source) => {
+                    wanted_ids.insert(source.clone());
+                }
+                None => need_all = true,
+            }
         }
 
-        // Include source object id so we never reuse a stale whole-file cache entry.
-        let cache_object_id = match source_object_id.as_deref() {
-            Some(source) => format!("{id}__o{source}"),
-            None => id.clone(),
+        let extracted = if need_all {
+            extract_model_meshes(&bytes, None)?
+        } else {
+            extract_model_meshes(&bytes, Some(&wanted_ids))?
         };
 
-        let positions_path = write_positions_cache(
-            cache_dir,
-            &file.content_hash,
-            selected_plate_id.as_deref().unwrap_or("plate"),
-            &cache_object_id,
-            &mesh.positions,
-        )?;
+        let combined_all = if need_all {
+            let mut combined = Mesh::default();
+            for part in extracted.values() {
+                combined.positions.extend_from_slice(&part.positions);
+            }
+            Some(combined)
+        } else {
+            None
+        };
 
-        objects.push(ModelGeometryObject {
-            id,
-            name,
-            transform,
-            color,
-            positions_path,
-            triangle_count: mesh.triangle_count() as u64,
-        });
+        for index in indices {
+            let entry = &pending[index];
+            let mesh = match entry.source_object_id.as_deref() {
+                Some(source) => extracted.get(source).cloned(),
+                None => combined_all.clone(),
+            };
+            let Some(mesh) = mesh else {
+                continue;
+            };
+            if mesh.triangle_count() == 0 {
+                continue;
+            }
+            if mesh.triangle_count() > MAX_TRIANGLES_PER_OBJECT {
+                return Err(format!(
+                    "Object {} is too large for 3D preview.",
+                    entry.name.as_deref().unwrap_or(&entry.id)
+                ));
+            }
+
+            // Include source object id so we never reuse a stale whole-file cache entry.
+            let cache_object_id = match entry.source_object_id.as_deref() {
+                Some(source) => format!("{}__o{source}", entry.id),
+                None => entry.id.clone(),
+            };
+
+            let positions_path = write_positions_cache(
+                cache_dir,
+                &file.content_hash,
+                selected_plate_id.as_deref().unwrap_or("plate"),
+                &cache_object_id,
+                &mesh.positions,
+            )?;
+
+            objects.push(ModelGeometryObject {
+                id: entry.id.clone(),
+                name: entry.name.clone(),
+                transform: entry.transform.clone(),
+                color: entry.color.clone(),
+                positions_path,
+                triangle_count: mesh.triangle_count() as u64,
+            });
+        }
     }
 
     if objects.is_empty() {
@@ -352,6 +426,70 @@ fn sanitize_zip_path(path: &str) -> Result<String, String> {
     Ok(normalized)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GeometryManifest {
+    version: u32,
+    geometry: ModelGeometryResponse,
+}
+
+fn cache_scope_dir(cache_dir: &Path, content_hash: &str, scope: &str) -> PathBuf {
+    let safe_scope = scope.replace(['/', '\\', ':'], "_");
+    cache_dir
+        .join(format!("v{GEOMETRY_CACHE_VERSION}"))
+        .join(content_hash)
+        .join(safe_scope)
+}
+
+fn read_geometry_manifest(
+    cache_dir: &Path,
+    content_hash: &str,
+    scope: &str,
+) -> Option<ModelGeometryResponse> {
+    if content_hash.is_empty() {
+        return None;
+    }
+
+    let path = cache_scope_dir(cache_dir, content_hash, scope).join("manifest.json");
+    let raw = fs::read_to_string(path).ok()?;
+    let manifest: GeometryManifest = serde_json::from_str(&raw).ok()?;
+    if manifest.version != GEOMETRY_CACHE_VERSION || manifest.geometry.objects.is_empty() {
+        return None;
+    }
+    if !manifest
+        .geometry
+        .objects
+        .iter()
+        .all(|object| Path::new(&object.positions_path).is_file())
+    {
+        return None;
+    }
+    Some(manifest.geometry)
+}
+
+fn write_geometry_manifest(
+    cache_dir: &Path,
+    content_hash: &str,
+    scope: &str,
+    geometry: &ModelGeometryResponse,
+) -> Result<(), String> {
+    if content_hash.is_empty() {
+        return Err("Missing content hash for geometry cache.".into());
+    }
+
+    let dir = cache_scope_dir(cache_dir, content_hash, scope);
+    fs::create_dir_all(&dir)
+        .map_err(|error| format!("Could not create geometry cache: {error}"))?;
+    let manifest = GeometryManifest {
+        version: GEOMETRY_CACHE_VERSION,
+        geometry: geometry.clone(),
+    };
+    let json = serde_json::to_string(&manifest)
+        .map_err(|error| format!("Could not serialize geometry cache: {error}"))?;
+    fs::write(dir.join("manifest.json"), json)
+        .map_err(|error| format!("Could not write geometry cache: {error}"))?;
+    Ok(())
+}
+
 fn write_positions_cache(
     cache_dir: &Path,
     content_hash: &str,
@@ -363,12 +501,11 @@ fn write_positions_cache(
         return Err("Missing content hash for geometry cache.".into());
     }
 
-    let safe_scope = scope.replace(['/', '\\', ':'], "_");
-    let safe_object = object_id.replace(['/', '\\', ':'], "_");
-    let dir = cache_dir.join(content_hash).join(&safe_scope);
+    let dir = cache_scope_dir(cache_dir, content_hash, scope);
     fs::create_dir_all(&dir)
         .map_err(|error| format!("Could not create geometry cache: {error}"))?;
 
+    let safe_object = object_id.replace(['/', '\\', ':'], "_");
     let filename = format!("{safe_object}.f32");
     let absolute = dir.join(&filename);
 
@@ -571,5 +708,42 @@ mod tests {
         );
         assert_eq!(color_for_extruder(3, &filaments), None);
         assert_eq!(color_for_extruder(0, &filaments), None);
+    }
+
+    #[test]
+    fn geometry_manifest_skips_extract_when_buffers_exist() {
+        let dir = std::env::temp_dir().join(format!(
+            "3d-companion-geom-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+
+        let positions = dir.join("part.f32");
+        fs::write(&positions, [0u8; 36]).unwrap();
+
+        let geometry = ModelGeometryResponse {
+            format: "3mf".into(),
+            plate_id: Some("plate-1".into()),
+            bed_width_mm: Some(256.0),
+            bed_depth_mm: Some(256.0),
+            objects: vec![ModelGeometryObject {
+                id: "1".into(),
+                name: Some("Part".into()),
+                transform: None,
+                color: None,
+                positions_path: positions.to_string_lossy().to_string(),
+                triangle_count: 1,
+            }],
+        };
+
+        write_geometry_manifest(&dir, "abc123", "plate-1", &geometry).unwrap();
+        let cached = read_geometry_manifest(&dir, "abc123", "plate-1").unwrap();
+        assert_eq!(cached.objects.len(), 1);
+        assert_eq!(cached.objects[0].id, "1");
+        assert_eq!(cached.plate_id.as_deref(), Some("plate-1"));
+
+        fs::remove_file(&positions).unwrap();
+        assert!(read_geometry_manifest(&dir, "abc123", "plate-1").is_none());
+        let _ = fs::remove_dir_all(dir);
     }
 }

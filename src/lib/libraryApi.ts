@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ModelGeometryResponse } from "@/types/geometry";
 import type {
   AddLibraryLocationResult,
   BackgroundTasksEvent,
@@ -58,14 +59,55 @@ export function getBackgroundTasks(): Promise<BackgroundTasksEvent> {
   return invoke("get_background_tasks");
 }
 
+function geometryCacheKey(
+  libraryFileId: string,
+  plateId: string | null | undefined,
+  contentHash?: string,
+): string {
+  return `${libraryFileId}::${contentHash ?? ""}::${plateId ?? ""}`;
+}
+
+const geometryResults = new Map<string, ModelGeometryResponse>();
+const geometryRequests = new Map<string, Promise<ModelGeometryResponse>>();
+
+export function getCachedModelGeometry(
+  libraryFileId: string,
+  plateId?: string | null,
+  contentHash?: string,
+): ModelGeometryResponse | undefined {
+  return geometryResults.get(geometryCacheKey(libraryFileId, plateId, contentHash));
+}
+
 export function getModelGeometry(
   libraryFileId: string,
   plateId?: string | null,
-): Promise<import("@/types/geometry").ModelGeometryResponse> {
-  return invoke("get_model_geometry", {
+  contentHash?: string,
+): Promise<ModelGeometryResponse> {
+  const key = geometryCacheKey(libraryFileId, plateId, contentHash);
+  const cached = geometryResults.get(key);
+  if (cached) {
+    return Promise.resolve(cached);
+  }
+
+  const pending = geometryRequests.get(key);
+  if (pending) {
+    return pending;
+  }
+
+  const request = invoke<ModelGeometryResponse>("get_model_geometry", {
     libraryFileId,
     plateId: plateId ?? null,
+  }).then((data) => {
+    geometryResults.set(key, data);
+    geometryRequests.delete(key);
+    return data;
+  }).catch((error) => {
+    geometryRequests.delete(key);
+    throw error;
   });
+
+  geometryRequests.set(key, request);
+  return request;
 }
 
 export function toUserError(error: unknown, fallback: string): string {

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
 
@@ -820,32 +820,65 @@ fn extract_mesh(
 }
 
 pub(crate) fn append_model_mesh(mesh: &mut Mesh, bytes: &[u8]) -> Result<(), String> {
-    append_model_mesh_filtered(mesh, bytes, None)
+    let extracted = extract_model_meshes(bytes, None)?;
+    for part in extracted.into_values() {
+        mesh.positions.extend_from_slice(&part.positions);
+    }
+    Ok(())
 }
 
-/// Append triangle soup from a 3MF `.model` document.
-/// When `only_object_id` is set, only that `<object id="…">` mesh is loaded —
-/// required because Bambu packs many parts into one file and references them
-/// via component `objectid`.
-pub(crate) fn append_model_mesh_filtered(
-    mesh: &mut Mesh,
+/// Parse a `.model` XML once and collect meshes for the requested object ids.
+/// `None` collects every object; `Some(ids)` stops once all ids are found.
+pub(crate) fn extract_model_meshes(
     bytes: &[u8],
-    only_object_id: Option<&str>,
-) -> Result<(), String> {
+    only_object_ids: Option<&HashSet<String>>,
+) -> Result<HashMap<String, Mesh>, String> {
     let text = String::from_utf8_lossy(bytes);
     let mut reader = Reader::from_str(&text);
     reader.config_mut().trim_text(true);
 
+    let mut meshes: HashMap<String, Mesh> = HashMap::new();
     let mut vertices: Vec<[f32; 3]> = Vec::new();
-    let mut object_active = only_object_id.is_none();
-    let mut found_target = only_object_id.is_none();
+    let mut current_id: Option<String> = None;
+    let mut current_mesh = Mesh::default();
     let mut buf = Vec::new();
+
+    let wanted = |id: &str| match only_object_ids {
+        Some(set) => set.contains(id),
+        None => true,
+    };
+
+    let flush = |current_id: &mut Option<String>,
+                 current_mesh: &mut Mesh,
+                 vertices: &mut Vec<[f32; 3]>,
+                 meshes: &mut HashMap<String, Mesh>| {
+        if let Some(id) = current_id.take() {
+            if current_mesh.triangle_count() > 0 {
+                meshes.insert(id, std::mem::take(current_mesh));
+            } else {
+                *current_mesh = Mesh::default();
+            }
+        }
+        vertices.clear();
+    };
 
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(tag)) | Ok(Event::Empty(tag)) => {
                 let local = String::from_utf8_lossy(tag.local_name().as_ref()).to_ascii_lowercase();
                 if local == "object" {
+                    flush(
+                        &mut current_id,
+                        &mut current_mesh,
+                        &mut vertices,
+                        &mut meshes,
+                    );
+                    if let Some(wanted_ids) = only_object_ids {
+                        if wanted_ids.iter().all(|id| meshes.contains_key(id)) {
+                            break;
+                        }
+                    }
+
                     let mut object_id = None;
                     for attr in tag.attributes().flatten() {
                         let key = String::from_utf8_lossy(attr.key.local_name().as_ref())
@@ -855,17 +888,11 @@ pub(crate) fn append_model_mesh_filtered(
                                 Some(attr.unescape_value().unwrap_or_default().to_string());
                         }
                     }
-                    // Each object has its own vertex index space.
                     vertices.clear();
-                    object_active = match only_object_id {
-                        Some(target) => object_id.as_deref() == Some(target),
-                        None => true,
-                    };
-                    if object_active {
-                        found_target = true;
-                    }
+                    current_mesh = Mesh::default();
+                    current_id = object_id.filter(|id| wanted(id));
                 } else if local == "vertex" {
-                    if !object_active {
+                    if current_id.is_none() {
                         continue;
                     }
                     let mut x = 0.0;
@@ -888,7 +915,7 @@ pub(crate) fn append_model_mesh_filtered(
                     }
                     vertices.push([x, y, z]);
                 } else if local == "triangle" {
-                    if !object_active {
+                    if current_id.is_none() {
                         continue;
                     }
                     let mut v1 = 0_usize;
@@ -912,31 +939,49 @@ pub(crate) fn append_model_mesh_filtered(
                     if let (Some(a), Some(b), Some(c)) =
                         (vertices.get(v1), vertices.get(v2), vertices.get(v3))
                     {
-                        mesh.push_triangle(*a, *b, *c);
+                        current_mesh.push_triangle(*a, *b, *c);
                     }
                 }
             }
             Ok(Event::End(tag)) => {
                 let local = String::from_utf8_lossy(tag.local_name().as_ref()).to_ascii_lowercase();
                 if local == "object" {
-                    object_active = only_object_id.is_none();
-                    vertices.clear();
+                    flush(
+                        &mut current_id,
+                        &mut current_mesh,
+                        &mut vertices,
+                        &mut meshes,
+                    );
+                    if let Some(wanted_ids) = only_object_ids {
+                        if wanted_ids.iter().all(|id| meshes.contains_key(id)) {
+                            break;
+                        }
+                    }
                 }
             }
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) => {
+                flush(
+                    &mut current_id,
+                    &mut current_mesh,
+                    &mut vertices,
+                    &mut meshes,
+                );
+                break;
+            }
             Err(error) => return Err(format!("Could not parse 3MF model XML: {error}")),
             _ => {}
         }
         buf.clear();
     }
 
-    if let Some(target) = only_object_id {
-        if !found_target {
+    if let Some(wanted_ids) = only_object_ids {
+        if meshes.is_empty() && !wanted_ids.is_empty() {
+            let target = wanted_ids.iter().next().map(String::as_str).unwrap_or("?");
             return Err(format!("Object id {target} not found in 3MF model file."));
         }
     }
 
-    Ok(())
+    Ok(meshes)
 }
 
 pub(crate) fn read_zip_entry(
@@ -1187,6 +1232,7 @@ fn format_percent(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use std::io::Write;
     use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
@@ -1436,7 +1482,7 @@ mod tests {
     }
 
     #[test]
-    fn append_model_mesh_filters_by_object_id() {
+    fn extract_model_meshes_filters_by_object_id() {
         let model = r#"<?xml version="1.0"?>
 <model>
   <resources>
@@ -1473,10 +1519,17 @@ mod tests {
         append_model_mesh(&mut all, model.as_bytes()).unwrap();
         assert_eq!(all.triangle_count(), 3);
 
-        let mut only2 = Mesh::default();
-        append_model_mesh_filtered(&mut only2, model.as_bytes(), Some("2")).unwrap();
-        assert_eq!(only2.triangle_count(), 2);
+        let only2_ids = HashSet::from(["2".to_string()]);
+        let only2 = extract_model_meshes(model.as_bytes(), Some(&only2_ids)).unwrap();
+        assert_eq!(only2.len(), 1);
+        assert_eq!(only2["2"].triangle_count(), 2);
         // First vertex of object 2 should be at x=10, not object 1's origin.
-        assert!((only2.positions[0] - 10.0).abs() < 1e-5);
+        assert!((only2["2"].positions[0] - 10.0).abs() < 1e-5);
+
+        let wanted = HashSet::from(["1".to_string(), "2".to_string()]);
+        let extracted = extract_model_meshes(model.as_bytes(), Some(&wanted)).unwrap();
+        assert_eq!(extracted.len(), 2);
+        assert_eq!(extracted["1"].triangle_count(), 1);
+        assert_eq!(extracted["2"].triangle_count(), 2);
     }
 }
