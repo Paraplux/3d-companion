@@ -16,12 +16,15 @@ import {
   sortFiles,
   type BrowseState,
 } from "@/lib/libraryBrowse";
+import { filterFilesByTag } from "@/lib/tags";
 import type { LibraryFile, SortDirection, SortField } from "@/types/library";
 
 export function LibraryPage() {
   const {
     locations,
     files,
+    tags,
+    fileTagMap,
     ready,
     scanning,
     scanningLabel,
@@ -51,19 +54,33 @@ export function LibraryPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   const isSearching = query.trim().length > 0;
+  const activeTag = browse.tagId
+    ? tags.find((tag) => tag.id === browse.tagId)
+    : undefined;
   const currentLocation = browse.locationPath
     ? locationByPath(locations, browse.locationPath)
     : undefined;
 
-  // Drop stale folder params if the location was removed from the library.
+  // Drop stale folder / tag params.
   useEffect(() => {
-    if (!browse.locationPath || locations.length === 0) {
-      return;
+    if (browse.locationPath && locations.length > 0) {
+      if (!locationByPath(locations, browse.locationPath)) {
+        setBrowse({
+          locationPath: null,
+          relativeDir: "",
+          tagId: browse.tagId,
+        });
+        return;
+      }
     }
-    if (!locationByPath(locations, browse.locationPath)) {
-      setBrowse({ locationPath: null, relativeDir: "" });
+    if (browse.tagId && tags.length > 0 && !tags.some((tag) => tag.id === browse.tagId)) {
+      setBrowse({
+        locationPath: browse.locationPath,
+        relativeDir: browse.relativeDir,
+        tagId: null,
+      });
     }
-  }, [browse.locationPath, locations, setBrowse]);
+  }, [browse, locations, setBrowse, tags]);
 
   useEffect(() => {
     if (!isSearching) {
@@ -86,8 +103,18 @@ export function LibraryPage() {
     };
   }, [isSearching, query, search]);
 
+  const scopedFiles = useMemo(
+    () => filterFilesByTag(files, fileTagMap, browse.tagId),
+    [browse.tagId, fileTagMap, files],
+  );
+
   const visibleFolders = useMemo(() => {
     if (isSearching) {
+      return [];
+    }
+
+    // Flat tagged results at library root.
+    if (browse.tagId && !browse.locationPath) {
       return [];
     }
 
@@ -96,32 +123,49 @@ export function LibraryPage() {
         name: location.name,
         relativeDir: "",
         locationPath: location.path,
-        itemCount: files.filter((file) => file.locationPath === location.path).length,
+        itemCount: scopedFiles.filter((file) => file.locationPath === location.path)
+          .length,
       }));
     }
 
-    return collectFolders(files, browse.locationPath, browse.relativeDir);
-  }, [browse.locationPath, browse.relativeDir, files, isSearching, locations]);
+    return collectFolders(scopedFiles, browse.locationPath, browse.relativeDir);
+  }, [
+    browse.locationPath,
+    browse.relativeDir,
+    browse.tagId,
+    isSearching,
+    locations,
+    scopedFiles,
+  ]);
 
   const visibleFiles = useMemo(() => {
     if (isSearching) {
-      return sortFiles(searchResults ?? [], sortField, sortDirection);
+      return sortFiles(
+        filterFilesByTag(searchResults ?? [], fileTagMap, browse.tagId),
+        sortField,
+        sortDirection,
+      );
     }
 
     if (!browse.locationPath) {
+      if (browse.tagId) {
+        return sortFiles(scopedFiles, sortField, sortDirection);
+      }
       return [];
     }
 
     return sortFiles(
-      filesInDir(files, browse.locationPath, browse.relativeDir),
+      filesInDir(scopedFiles, browse.locationPath, browse.relativeDir),
       sortField,
       sortDirection,
     );
   }, [
     browse.locationPath,
     browse.relativeDir,
-    files,
+    browse.tagId,
+    fileTagMap,
     isSearching,
+    scopedFiles,
     searchResults,
     sortDirection,
     sortField,
@@ -131,7 +175,12 @@ export function LibraryPage() {
     const items: Array<{ label: string; onClick?: () => void }> = [
       {
         label: "Library",
-        onClick: () => setBrowse({ locationPath: null, relativeDir: "" }),
+        onClick: () =>
+          setBrowse({
+            locationPath: null,
+            relativeDir: "",
+            tagId: browse.tagId,
+          }),
       },
     ];
 
@@ -142,7 +191,11 @@ export function LibraryPage() {
     items.push({
       label: currentLocation.name,
       onClick: () =>
-        setBrowse({ locationPath: currentLocation.path, relativeDir: "" }),
+        setBrowse({
+          locationPath: currentLocation.path,
+          relativeDir: "",
+          tagId: browse.tagId,
+        }),
     });
 
     if (browse.relativeDir) {
@@ -162,17 +215,18 @@ export function LibraryPage() {
                 setBrowse({
                   locationPath: currentLocation.path,
                   relativeDir: pathAtSegment,
+                  tagId: browse.tagId,
                 }),
         });
       }
     }
 
     return items;
-  }, [browse.relativeDir, currentLocation, setBrowse]);
+  }, [browse.relativeDir, browse.tagId, currentLocation, setBrowse]);
 
   const itemCountLabel = isSearching
     ? `${visibleFiles.length} result${visibleFiles.length === 1 ? "" : "s"}`
-    : browse.locationPath
+    : browse.locationPath || browse.tagId
       ? `${visibleFolders.length + visibleFiles.length} item${
           visibleFolders.length + visibleFiles.length === 1 ? "" : "s"
         }`
@@ -182,9 +236,11 @@ export function LibraryPage() {
     ? scanningLabel
     : locations.length === 0
       ? "Your 3D models and projects"
-      : currentLocation
-        ? `${currentLocation.name} · ${itemCountLabel}`
-        : `${itemCountLabel}`;
+      : activeTag && !currentLocation
+        ? `Tag · ${activeTag.name} · ${itemCountLabel}`
+        : currentLocation
+          ? `${currentLocation.name} · ${itemCountLabel}`
+          : `${itemCountLabel}`;
 
   if (!ready && scanning) {
     return (
@@ -215,11 +271,12 @@ export function LibraryPage() {
 
   const showEmptyFolder =
     !isSearching &&
-    browse.locationPath !== null &&
+    (browse.locationPath !== null || browse.tagId !== null) &&
     visibleFolders.length === 0 &&
     visibleFiles.length === 0;
 
   const showNoSearchResults = isSearching && visibleFiles.length === 0;
+  const showPathOnCards = isSearching || Boolean(browse.tagId && !browse.locationPath);
 
   return (
     <section className="page page--library">
@@ -284,12 +341,41 @@ export function LibraryPage() {
 
       {error ? <ErrorBanner message={error} onDismiss={clearError} /> : null}
 
+      {activeTag ? (
+        <div className="library-filter-chip">
+          <span>
+            Tag: <strong>{activeTag.name}</strong>
+          </span>
+          <button
+            type="button"
+            className="button button--ghost"
+            onClick={() =>
+              setBrowse({
+                locationPath: browse.locationPath,
+                relativeDir: browse.relativeDir,
+                tagId: null,
+              })
+            }
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
+
       {!isSearching ? <LibraryBreadcrumbs items={breadcrumbItems} /> : null}
 
       {showEmptyFolder ? (
         <EmptyState
-          title="This folder doesn’t contain any supported 3D files."
-          description="Supported formats: STL, 3MF, OBJ, STEP."
+          title={
+            activeTag
+              ? `No models tagged “${activeTag.name}” here.`
+              : "This folder doesn’t contain any supported 3D files."
+          }
+          description={
+            activeTag
+              ? "Try another folder, or clear the tag filter."
+              : "Supported formats: STL, 3MF, OBJ, STEP."
+          }
         />
       ) : null}
 
@@ -313,6 +399,7 @@ export function LibraryPage() {
                 setBrowse({
                   locationPath: folder.locationPath,
                   relativeDir: folder.relativeDir,
+                  tagId: browse.tagId,
                 })
               }
             />
@@ -322,8 +409,8 @@ export function LibraryPage() {
             <FileCard
               key={file.libraryFileId}
               file={file}
-              showPath={isSearching}
-              showLocation={isSearching && locations.length > 1}
+              showPath={showPathOnCards}
+              showLocation={showPathOnCards && locations.length > 1}
               locationName={
                 locationByPath(locations, file.locationPath)?.name
               }
@@ -341,6 +428,7 @@ export function LibraryPage() {
               setBrowse({
                 locationPath: browse.locationPath,
                 relativeDir: parentRelativeDir(browse.relativeDir),
+                tagId: browse.tagId,
               })
             }
           >

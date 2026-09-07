@@ -11,22 +11,32 @@ import { listen } from "@tauri-apps/api/event";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import {
   addFavorite as addFavoriteApi,
+  addFileTag as addFileTagApi,
   addLibraryLocation,
+  createTag as createTagApi,
+  deleteTag as deleteTagApi,
+  getAllFileTags,
   getFavoriteIds,
   getLibrarySnapshot,
+  getTags,
   removeFavorite as removeFavoriteApi,
+  removeFileTag as removeFileTagApi,
   removeLibraryLocation,
+  renameTag as renameTagApi,
   scanLibrary,
   searchLibraryFiles,
   toUserError,
 } from "@/lib/libraryApi";
-import type { LibraryEvent, LibraryFile, LibraryLocation } from "@/types/library";
+import { buildFileTagMap, tagsForFile } from "@/lib/tags";
+import type { LibraryEvent, LibraryFile, LibraryLocation, Tag } from "@/types/library";
 import type { LibraryFileId } from "@/types/libraryData";
 
 type LibraryContextValue = {
   locations: LibraryLocation[];
   files: LibraryFile[];
   favoriteIds: LibraryFileId[];
+  tags: Tag[];
+  fileTagMap: Record<LibraryFileId, string[]>;
   ready: boolean;
   scanning: boolean;
   scanningLabel: string | null;
@@ -40,14 +50,34 @@ type LibraryContextValue = {
   addFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
   removeFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
   toggleFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
+  tagsForLibraryFile: (libraryFileId: LibraryFileId) => Tag[];
+  createTag: (name: string) => Promise<Tag>;
+  renameTag: (tagId: string, name: string) => Promise<Tag>;
+  deleteTag: (tagId: string) => Promise<void>;
+  addTagToFile: (libraryFileId: LibraryFileId, tagId: string) => Promise<void>;
+  removeTagFromFile: (libraryFileId: LibraryFileId, tagId: string) => Promise<void>;
+  addTagNameToFile: (libraryFileId: LibraryFileId, name: string) => Promise<Tag>;
 };
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
+
+async function loadTagState(): Promise<{
+  tags: Tag[];
+  fileTagMap: Record<LibraryFileId, string[]>;
+}> {
+  const [tags, relations] = await Promise.all([getTags(), getAllFileTags()]);
+  return {
+    tags,
+    fileTagMap: buildFileTagMap(relations),
+  };
+}
 
 export function LibraryProvider({ children }: { children: ReactNode }) {
   const [locations, setLocations] = useState<LibraryLocation[]>([]);
   const [files, setFiles] = useState<LibraryFile[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<LibraryFileId[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [fileTagMap, setFileTagMap] = useState<Record<LibraryFileId, string[]>>({});
   const [ready, setReady] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanningLabel, setScanningLabel] = useState<string | null>(null);
@@ -55,14 +85,21 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
   const clearError = useCallback(() => setError(null), []);
 
+  const refreshTags = useCallback(async () => {
+    const next = await loadTagState();
+    setTags(next.tags);
+    setFileTagMap(next.fileTagMap);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
     async function bootstrap() {
       try {
-        const [snapshot, favorites] = await Promise.all([
+        const [snapshot, favorites, tagState] = await Promise.all([
           getLibrarySnapshot(),
           getFavoriteIds(),
+          loadTagState(),
         ]);
         if (cancelled) {
           return;
@@ -70,6 +107,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setLocations(snapshot.locations);
         setFiles(snapshot.files);
         setFavoriteIds(favorites);
+        setTags(tagState.tags);
+        setFileTagMap(tagState.fileTagMap);
         setError(null);
         if (snapshot.reconciling) {
           setScanning(true);
@@ -291,11 +330,120 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [addFavorite, favoriteIdSet, removeFavorite],
   );
 
+  const tagsForLibraryFile = useCallback(
+    (libraryFileId: LibraryFileId) => tagsForFile(tags, fileTagMap, libraryFileId),
+    [fileTagMap, tags],
+  );
+
+  const createTag = useCallback(
+    async (name: string) => {
+      clearError();
+      try {
+        const tag = await createTagApi(name);
+        await refreshTags();
+        return tag;
+      } catch (err) {
+        setError(toUserError(err, "Could not create that tag."));
+        throw err;
+      }
+    },
+    [clearError, refreshTags],
+  );
+
+  const renameTag = useCallback(
+    async (tagId: string, name: string) => {
+      clearError();
+      try {
+        const tag = await renameTagApi(tagId, name);
+        await refreshTags();
+        return tag;
+      } catch (err) {
+        setError(toUserError(err, "Could not rename that tag."));
+        throw err;
+      }
+    },
+    [clearError, refreshTags],
+  );
+
+  const deleteTag = useCallback(
+    async (tagId: string) => {
+      clearError();
+      try {
+        await deleteTagApi(tagId);
+        await refreshTags();
+      } catch (err) {
+        setError(toUserError(err, "Could not delete that tag."));
+        throw err;
+      }
+    },
+    [clearError, refreshTags],
+  );
+
+  const addTagToFile = useCallback(
+    async (libraryFileId: LibraryFileId, tagId: string) => {
+      clearError();
+      setFileTagMap((current) => {
+        const existing = current[libraryFileId] ?? [];
+        if (existing.includes(tagId)) {
+          return current;
+        }
+        return { ...current, [libraryFileId]: [...existing, tagId] };
+      });
+
+      try {
+        await addFileTagApi(libraryFileId, tagId);
+        await refreshTags();
+      } catch (err) {
+        await refreshTags();
+        setError(toUserError(err, "Could not add that tag."));
+        throw err;
+      }
+    },
+    [clearError, refreshTags],
+  );
+
+  const removeTagFromFile = useCallback(
+    async (libraryFileId: LibraryFileId, tagId: string) => {
+      clearError();
+      setFileTagMap((current) => {
+        const existing = current[libraryFileId];
+        if (!existing) {
+          return current;
+        }
+        return {
+          ...current,
+          [libraryFileId]: existing.filter((id) => id !== tagId),
+        };
+      });
+
+      try {
+        await removeFileTagApi(libraryFileId, tagId);
+        await refreshTags();
+      } catch (err) {
+        await refreshTags();
+        setError(toUserError(err, "Could not remove that tag."));
+        throw err;
+      }
+    },
+    [clearError, refreshTags],
+  );
+
+  const addTagNameToFile = useCallback(
+    async (libraryFileId: LibraryFileId, name: string) => {
+      const tag = await createTag(name);
+      await addTagToFile(libraryFileId, tag.id);
+      return tag;
+    },
+    [addTagToFile, createTag],
+  );
+
   const value = useMemo(
     () => ({
       locations,
       files,
       favoriteIds,
+      tags,
+      fileTagMap,
       ready,
       scanning,
       scanningLabel,
@@ -309,11 +457,20 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       addFavorite,
       removeFavorite,
       toggleFavorite,
+      tagsForLibraryFile,
+      createTag,
+      renameTag,
+      deleteTag,
+      addTagToFile,
+      removeTagFromFile,
+      addTagNameToFile,
     }),
     [
       locations,
       files,
       favoriteIds,
+      tags,
+      fileTagMap,
       ready,
       scanning,
       scanningLabel,
@@ -327,6 +484,13 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       addFavorite,
       removeFavorite,
       toggleFavorite,
+      tagsForLibraryFile,
+      createTag,
+      renameTag,
+      deleteTag,
+      addTagToFile,
+      removeTagFromFile,
+      addTagNameToFile,
     ],
   );
 

@@ -175,6 +175,12 @@ export type Tag = {
   id: string;
   name: string;
   createdAt: number;
+  fileCount: number;
+};
+
+export type FileTag = {
+  libraryFileId: string;
+  tagId: string;
 };
 
 export type SortField = "name" | "modifiedAt" | "size" | "type";

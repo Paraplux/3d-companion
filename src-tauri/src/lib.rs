@@ -4,10 +4,11 @@ mod repositories;
 
 use database::Database;
 use library::{
-    add_favorite, add_library_location, get_background_tasks, get_collections, get_favorite_ids,
-    get_library_files, get_library_locations, get_library_snapshot, get_model_geometry,
-    get_projects, get_tags, is_favorite, remove_favorite, remove_library_location, scan_library,
-    scan_library_location, search_library_files, LibraryState,
+    add_favorite, add_file_tag, add_library_location, create_tag, delete_tag, get_all_file_tags,
+    get_background_tasks, get_collections, get_favorite_ids, get_file_tag_ids, get_library_files,
+    get_library_locations, get_library_snapshot, get_model_geometry, get_projects, get_tag_file_ids,
+    get_tags, is_favorite, remove_favorite, remove_file_tag, remove_library_location, rename_tag,
+    scan_library, scan_library_location, search_library_files, LibraryState,
 };
 use tauri::Manager;
 
@@ -36,6 +37,14 @@ pub fn run() {
             get_projects,
             get_collections,
             get_tags,
+            create_tag,
+            rename_tag,
+            delete_tag,
+            add_file_tag,
+            remove_file_tag,
+            get_file_tag_ids,
+            get_tag_file_ids,
+            get_all_file_tags,
             get_model_geometry,
             get_favorite_ids,
             add_favorite,

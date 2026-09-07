@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { TagsSettingsSection } from "@/components/library/TagsSettingsSection";
 import { useLibrary } from "@/hooks/useLibrary";
 import { useTheme } from "@/hooks/useTheme";
 import type { ThemePreference } from "@/types/theme";
@@ -98,6 +99,8 @@ export function SettingsPage() {
             </ul>
           )}
         </section>
+
+        <TagsSettingsSection />
       </div>
     </section>
   );

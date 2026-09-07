@@ -10,6 +10,8 @@ export type FolderEntry = {
 export type BrowseState = {
   locationPath: string | null;
   relativeDir: string;
+  /** Optional Library filter by stable tag id. */
+  tagId: string | null;
 };
 
 export function parentRelativeDir(relativeDir: string): string {
@@ -22,13 +24,15 @@ export function fileParentDir(relativePath: string): string {
   return index === -1 ? "" : relativePath.slice(0, index);
 }
 
-/** Restore library folder navigation from `/library?loc=&dir=`. */
+/** Restore library folder / tag navigation from `/library?loc=&dir=&tag=`. */
 export function browseFromSearchParams(params: URLSearchParams): BrowseState {
   const locationPath = params.get("loc");
   const relativeDir = params.get("dir") ?? "";
+  const tagId = params.get("tag");
   return {
     locationPath: locationPath && locationPath.length > 0 ? locationPath : null,
     relativeDir,
+    tagId: tagId && tagId.length > 0 ? tagId : null,
   };
 }
 
@@ -40,6 +44,9 @@ export function browseToSearchParams(browse: BrowseState): URLSearchParams {
     if (browse.relativeDir) {
       params.set("dir", browse.relativeDir);
     }
+  }
+  if (browse.tagId) {
+    params.set("tag", browse.tagId);
   }
   return params;
 }
@@ -54,10 +61,12 @@ export function libraryBrowseHref(browse: BrowseState): string {
 /** Build a Library href that opens the folder containing this file. */
 export function libraryHrefForFile(
   file: Pick<LibraryFile, "locationPath" | "relativePath">,
+  tagId: string | null = null,
 ): string {
   return libraryBrowseHref({
     locationPath: file.locationPath,
     relativeDir: fileParentDir(file.relativePath),
+    tagId,
   });
 }
 

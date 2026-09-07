@@ -5,6 +5,8 @@ import { FavoriteButton } from "@/components/library/FavoriteButton";
 import { FilamentSwatches } from "@/components/library/FilamentSwatches";
 import { FileFormatBadge } from "@/components/library/FileFormatBadge";
 import { FileTypeBadge } from "@/components/library/FileTypeBadge";
+import { TagPill } from "@/components/library/TagPill";
+import { useLibrary } from "@/hooks/useLibrary";
 import { getFileEcosystem, getFileFormat } from "@/lib/filePresentation";
 import { resolveFilaments } from "@/lib/filaments";
 import {
@@ -12,6 +14,7 @@ import {
   formatBytes,
   formatRelativePath,
 } from "@/lib/format";
+import { visibleTagsForCard } from "@/lib/tags";
 import type { LibraryFile } from "@/types/library";
 
 type FileCardProps = {
@@ -70,6 +73,7 @@ export function FileCard({
   showLocation = false,
   locationName,
 }: FileCardProps) {
+  const { tagsForLibraryFile } = useLibrary();
   const pathLabel = showLocation
     ? [locationName, formatRelativePath(file.relativePath)].filter(Boolean).join(" / ")
     : formatRelativePath(file.relativePath);
@@ -90,6 +94,10 @@ export function FileCard({
     Boolean(weight);
   const analyzing =
     file.analysisStatus === "pending" || file.analysisStatus === "analyzing";
+  const { visible: cardTags, overflow: tagOverflow } = visibleTagsForCard(
+    tagsForLibraryFile(file.libraryFileId),
+    2,
+  );
 
   return (
     <Link
@@ -143,6 +151,19 @@ export function FileCard({
         {analyzing ? <p className="file-card__status">Analyzing…</p> : null}
         {file.analysisStatus === "error" ? (
           <p className="file-card__status file-card__status--error">Analysis failed</p>
+        ) : null}
+
+        {cardTags.length > 0 ? (
+          <div className="file-card__tags" aria-label="Tags">
+            {cardTags.map((tag) => (
+              <TagPill key={tag.id} tag={tag} />
+            ))}
+            {tagOverflow > 0 ? (
+              <span className="tag-pill tag-pill--more" title={`${tagOverflow} more`}>
+                +{tagOverflow}
+              </span>
+            ) : null}
+          </div>
         ) : null}
 
         {showPath ? <p className="file-card__path">{pathLabel}</p> : null}

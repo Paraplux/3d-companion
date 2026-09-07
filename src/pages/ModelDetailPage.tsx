@@ -16,6 +16,7 @@ import {
   fileParentDir,
   libraryBrowseHref,
 } from "@/lib/libraryBrowse";
+import { ModelTags } from "@/components/model/ModelTags";
 
 export function ModelDetailPage() {
   const { fileId } = useParams<{ fileId: string }>();
@@ -50,6 +51,7 @@ export function ModelDetailPage() {
             libraryBrowseHref({
               locationPath: file.locationPath,
               relativeDir: "",
+              tagId: null,
             }),
           ),
       });
@@ -69,6 +71,7 @@ export function ModelDetailPage() {
               libraryBrowseHref({
                 locationPath: file.locationPath,
                 relativeDir,
+                tagId: null,
               }),
             ),
         });
@@ -130,6 +133,7 @@ export function ModelDetailPage() {
           </div>
         ) : null}
 
+        <ModelTags libraryFileId={file.libraryFileId} />
         <ModelMetadata file={file} />
         <ModelFileInfo file={file} locationName={locationName} />
       </div>

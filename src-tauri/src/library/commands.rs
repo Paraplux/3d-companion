@@ -10,7 +10,11 @@ use crate::repositories::favorites::{
     remove_favorite as remove_favorite_row,
 };
 use crate::repositories::projects::{list_projects, Project};
-use crate::repositories::tags::{list_tags, Tag};
+use crate::repositories::tags::{
+    add_file_tag as add_file_tag_row, create_tag as create_tag_row, delete_tag as delete_tag_row,
+    list_all_file_tags, list_file_ids_for_tag, list_tag_ids_for_file, list_tags,
+    remove_file_tag as remove_file_tag_row, rename_tag as rename_tag_row, FileTag, Tag,
+};
 
 #[tauri::command]
 pub fn get_library_snapshot(
@@ -95,6 +99,74 @@ pub fn get_collections(state: State<'_, LibraryState>) -> Result<Vec<Collection>
 #[tauri::command]
 pub fn get_tags(state: State<'_, LibraryState>) -> Result<Vec<Tag>, String> {
     state.db().with_conn(list_tags)
+}
+
+#[tauri::command]
+pub fn create_tag(state: State<'_, LibraryState>, name: String) -> Result<Tag, String> {
+    state.db().with_conn(|conn| create_tag_row(conn, &name))
+}
+
+#[tauri::command]
+pub fn rename_tag(
+    state: State<'_, LibraryState>,
+    tag_id: String,
+    name: String,
+) -> Result<Tag, String> {
+    state
+        .db()
+        .with_conn(|conn| rename_tag_row(conn, &tag_id, &name))
+}
+
+#[tauri::command]
+pub fn delete_tag(state: State<'_, LibraryState>, tag_id: String) -> Result<(), String> {
+    state.db().with_conn(|conn| delete_tag_row(conn, &tag_id))
+}
+
+#[tauri::command]
+pub fn add_file_tag(
+    state: State<'_, LibraryState>,
+    library_file_id: String,
+    tag_id: String,
+) -> Result<(), String> {
+    state
+        .db()
+        .with_conn(|conn| add_file_tag_row(conn, &library_file_id, &tag_id))
+}
+
+#[tauri::command]
+pub fn remove_file_tag(
+    state: State<'_, LibraryState>,
+    library_file_id: String,
+    tag_id: String,
+) -> Result<(), String> {
+    state
+        .db()
+        .with_conn(|conn| remove_file_tag_row(conn, &library_file_id, &tag_id))
+}
+
+#[tauri::command]
+pub fn get_file_tag_ids(
+    state: State<'_, LibraryState>,
+    library_file_id: String,
+) -> Result<Vec<String>, String> {
+    state
+        .db()
+        .with_conn(|conn| list_tag_ids_for_file(conn, &library_file_id))
+}
+
+#[tauri::command]
+pub fn get_tag_file_ids(
+    state: State<'_, LibraryState>,
+    tag_id: String,
+) -> Result<Vec<String>, String> {
+    state
+        .db()
+        .with_conn(|conn| list_file_ids_for_tag(conn, &tag_id))
+}
+
+#[tauri::command]
+pub fn get_all_file_tags(state: State<'_, LibraryState>) -> Result<Vec<FileTag>, String> {
+    state.db().with_conn(list_all_file_tags)
 }
 
 #[tauri::command]
