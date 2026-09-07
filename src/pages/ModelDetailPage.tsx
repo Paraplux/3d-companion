@@ -1,25 +1,14 @@
-import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { EcosystemIcon } from "@/components/library/EcosystemIcon";
 import { FileFormatBadge } from "@/components/library/FileFormatBadge";
 import { ModelFileInfo } from "@/components/model/ModelFileInfo";
 import { ModelMetadata } from "@/components/model/ModelMetadata";
-import { ModelViewerPlaceholder } from "@/components/model/ModelViewerPlaceholder";
+import { ModelPreview } from "@/components/model/ModelPreview";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useLibrary } from "@/hooks/useLibrary";
 import { getFileEcosystem, getFileFormat } from "@/lib/filePresentation";
 import { displayNameFromFilename } from "@/lib/format";
-
-const ModelViewer = lazy(async () => {
-  const module = await import("@/components/model/ModelViewer");
-  return { default: module.ModelViewer };
-});
-
-function canPreview3d(extension: string): boolean {
-  const normalized = extension.toLowerCase();
-  return normalized === "stl" || normalized === "3mf";
-}
 
 function goBack(navigate: ReturnType<typeof useNavigate>) {
   const index = window.history.state?.idx;
@@ -34,7 +23,6 @@ export function ModelDetailPage() {
   const { fileId } = useParams<{ fileId: string }>();
   const navigate = useNavigate();
   const { files, locations, ready } = useLibrary();
-  const [viewerActive, setViewerActive] = useState(false);
 
   const file = fileId
     ? files.find((entry) => entry.libraryFileId === fileId)
@@ -42,10 +30,6 @@ export function ModelDetailPage() {
   const locationName = file
     ? locations.find((location) => location.path === file.locationPath)?.name
     : undefined;
-
-  useEffect(() => {
-    setViewerActive(false);
-  }, [fileId]);
 
   if (!ready) {
     return (
@@ -74,7 +58,6 @@ export function ModelDetailPage() {
   const displayName = displayNameFromFilename(file.name);
   const format = getFileFormat(file);
   const ecosystem = getFileEcosystem(file);
-  const previewable = canPreview3d(file.extension);
 
   return (
     <section className="page page--model-detail">
@@ -94,22 +77,7 @@ export function ModelDetailPage() {
       />
 
       <div className="model-detail__body">
-        {viewerActive && previewable ? (
-          <Suspense
-            fallback={
-              <div className="model-viewer model-viewer--message">
-                <p>Loading 3D preview…</p>
-              </div>
-            }
-          >
-            <ModelViewer file={file} />
-          </Suspense>
-        ) : (
-          <ModelViewerPlaceholder
-            file={file}
-            onActivate={previewable ? () => setViewerActive(true) : undefined}
-          />
-        )}
+        <ModelPreview file={file} />
 
         {(format || ecosystem) ? (
           <div className="model-detail__badges">
