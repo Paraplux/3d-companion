@@ -4,6 +4,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("001_initial.sql")),
     (2, include_str!("002_file_metadata.sql")),
     (3, include_str!("003_tags_name_nocase.sql")),
+    (4, include_str!("004_collections_name_nocase.sql")),
 ];
 
 pub fn run_migrations(conn: &Connection) -> Result<(), String> {

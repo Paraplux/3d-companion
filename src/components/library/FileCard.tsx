@@ -22,6 +22,7 @@ type FileCardProps = {
   showPath?: boolean;
   showLocation?: boolean;
   locationName?: string;
+  onRemoveFromCollection?: () => void;
 };
 
 function formatDimensions(file: LibraryFile): string | null {
@@ -72,6 +73,7 @@ export function FileCard({
   showPath = false,
   showLocation = false,
   locationName,
+  onRemoveFromCollection,
 }: FileCardProps) {
   const { tagsForLibraryFile } = useLibrary();
   const pathLabel = showLocation
@@ -107,6 +109,21 @@ export function FileCard({
     >
       <div className="file-card__preview">
         <FavoriteButton libraryFileId={file.libraryFileId} />
+        {onRemoveFromCollection ? (
+          <button
+            type="button"
+            className="file-card__collection-remove"
+            aria-label="Remove from collection"
+            title="Remove from collection"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onRemoveFromCollection();
+            }}
+          >
+            ×
+          </button>
+        ) : null}
         {thumbnailSrc ? (
           <img
             className="file-card__thumb"

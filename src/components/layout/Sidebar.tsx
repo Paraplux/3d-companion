@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 const primaryNav = [
   { to: "/library", label: "Library", icon: LibraryIcon },
   { to: "/projects", label: "Projects", icon: ProjectsIcon },
+  { to: "/collections", label: "Collections", icon: CollectionsIcon },
   { to: "/favorites", label: "Favorites", icon: FavoritesIcon },
 ] as const;
 
@@ -19,7 +20,7 @@ export function Sidebar() {
           <NavLink
             key={to}
             to={to}
-            end={to !== "/library"}
+            end={to !== "/library" && to !== "/collections"}
             className={({ isActive }) =>
               isActive ? "sidebar__link is-active" : "sidebar__link"
             }
@@ -63,6 +64,19 @@ function ProjectsIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path
         d="M2.5 4.5h11v8.5H2.5V4.5ZM2.5 4.5 4 2.5h3.5L9 4.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CollectionsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M3 3.5h4.5v4.5H3V3.5ZM8.5 3.5H13v4.5H8.5V3.5ZM3 9h4.5v4.5H3V9ZM8.5 9H13v4.5H8.5V9Z"
         stroke="currentColor"
         strokeWidth="1.4"
         strokeLinejoin="round"

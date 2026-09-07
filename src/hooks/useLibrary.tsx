@@ -12,23 +12,37 @@ import { ask, open } from "@tauri-apps/plugin-dialog";
 import {
   addFavorite as addFavoriteApi,
   addFileTag as addFileTagApi,
+  addFileToCollection as addFileToCollectionApi,
   addLibraryLocation,
+  createCollection as createCollectionApi,
   createTag as createTagApi,
+  deleteCollection as deleteCollectionApi,
   deleteTag as deleteTagApi,
+  getAllFileCollections,
   getAllFileTags,
+  getCollections,
   getFavoriteIds,
   getLibrarySnapshot,
   getTags,
   removeFavorite as removeFavoriteApi,
+  removeFileFromCollection as removeFileFromCollectionApi,
   removeFileTag as removeFileTagApi,
   removeLibraryLocation,
+  renameCollection as renameCollectionApi,
   renameTag as renameTagApi,
   scanLibrary,
   searchLibraryFiles,
   toUserError,
 } from "@/lib/libraryApi";
+import { buildFileCollectionMap, collectionsForFile } from "@/lib/collections";
 import { buildFileTagMap, tagsForFile } from "@/lib/tags";
-import type { LibraryEvent, LibraryFile, LibraryLocation, Tag } from "@/types/library";
+import type {
+  Collection,
+  LibraryEvent,
+  LibraryFile,
+  LibraryLocation,
+  Tag,
+} from "@/types/library";
 import type { LibraryFileId } from "@/types/libraryData";
 
 type LibraryContextValue = {
@@ -37,6 +51,8 @@ type LibraryContextValue = {
   favoriteIds: LibraryFileId[];
   tags: Tag[];
   fileTagMap: Record<LibraryFileId, string[]>;
+  collections: Collection[];
+  fileCollectionMap: Record<LibraryFileId, string[]>;
   ready: boolean;
   scanning: boolean;
   scanningLabel: string | null;
@@ -57,6 +73,22 @@ type LibraryContextValue = {
   addTagToFile: (libraryFileId: LibraryFileId, tagId: string) => Promise<void>;
   removeTagFromFile: (libraryFileId: LibraryFileId, tagId: string) => Promise<void>;
   addTagNameToFile: (libraryFileId: LibraryFileId, name: string) => Promise<Tag>;
+  collectionsForLibraryFile: (libraryFileId: LibraryFileId) => Collection[];
+  createCollection: (name: string) => Promise<Collection>;
+  renameCollection: (collectionId: string, name: string) => Promise<Collection>;
+  deleteCollection: (collectionId: string) => Promise<void>;
+  addFileToCollection: (
+    libraryFileId: LibraryFileId,
+    collectionId: string,
+  ) => Promise<void>;
+  removeFileFromCollection: (
+    libraryFileId: LibraryFileId,
+    collectionId: string,
+  ) => Promise<void>;
+  addCollectionNameToFile: (
+    libraryFileId: LibraryFileId,
+    name: string,
+  ) => Promise<Collection>;
 };
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
@@ -72,12 +104,30 @@ async function loadTagState(): Promise<{
   };
 }
 
+async function loadCollectionState(): Promise<{
+  collections: Collection[];
+  fileCollectionMap: Record<LibraryFileId, string[]>;
+}> {
+  const [collections, relations] = await Promise.all([
+    getCollections(),
+    getAllFileCollections(),
+  ]);
+  return {
+    collections,
+    fileCollectionMap: buildFileCollectionMap(relations),
+  };
+}
+
 export function LibraryProvider({ children }: { children: ReactNode }) {
   const [locations, setLocations] = useState<LibraryLocation[]>([]);
   const [files, setFiles] = useState<LibraryFile[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<LibraryFileId[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [fileTagMap, setFileTagMap] = useState<Record<LibraryFileId, string[]>>({});
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [fileCollectionMap, setFileCollectionMap] = useState<
+    Record<LibraryFileId, string[]>
+  >({});
   const [ready, setReady] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanningLabel, setScanningLabel] = useState<string | null>(null);
@@ -91,15 +141,22 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     setFileTagMap(next.fileTagMap);
   }, []);
 
+  const refreshCollections = useCallback(async () => {
+    const next = await loadCollectionState();
+    setCollections(next.collections);
+    setFileCollectionMap(next.fileCollectionMap);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
     async function bootstrap() {
       try {
-        const [snapshot, favorites, tagState] = await Promise.all([
+        const [snapshot, favorites, tagState, collectionState] = await Promise.all([
           getLibrarySnapshot(),
           getFavoriteIds(),
           loadTagState(),
+          loadCollectionState(),
         ]);
         if (cancelled) {
           return;
@@ -109,6 +166,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setFavoriteIds(favorites);
         setTags(tagState.tags);
         setFileTagMap(tagState.fileTagMap);
+        setCollections(collectionState.collections);
+        setFileCollectionMap(collectionState.fileCollectionMap);
         setError(null);
         if (snapshot.reconciling) {
           setScanning(true);
@@ -437,6 +496,114 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [addTagToFile, createTag],
   );
 
+  const collectionsForLibraryFile = useCallback(
+    (libraryFileId: LibraryFileId) =>
+      collectionsForFile(collections, fileCollectionMap, libraryFileId),
+    [collections, fileCollectionMap],
+  );
+
+  const createCollection = useCallback(
+    async (name: string) => {
+      clearError();
+      try {
+        const collection = await createCollectionApi(name);
+        await refreshCollections();
+        return collection;
+      } catch (err) {
+        setError(toUserError(err, "Could not create that collection."));
+        throw err;
+      }
+    },
+    [clearError, refreshCollections],
+  );
+
+  const renameCollection = useCallback(
+    async (collectionId: string, name: string) => {
+      clearError();
+      try {
+        const collection = await renameCollectionApi(collectionId, name);
+        await refreshCollections();
+        return collection;
+      } catch (err) {
+        setError(toUserError(err, "Could not rename that collection."));
+        throw err;
+      }
+    },
+    [clearError, refreshCollections],
+  );
+
+  const deleteCollection = useCallback(
+    async (collectionId: string) => {
+      clearError();
+      try {
+        await deleteCollectionApi(collectionId);
+        await refreshCollections();
+      } catch (err) {
+        setError(toUserError(err, "Could not delete that collection."));
+        throw err;
+      }
+    },
+    [clearError, refreshCollections],
+  );
+
+  const addFileToCollection = useCallback(
+    async (libraryFileId: LibraryFileId, collectionId: string) => {
+      clearError();
+      setFileCollectionMap((current) => {
+        const existing = current[libraryFileId] ?? [];
+        if (existing.includes(collectionId)) {
+          return current;
+        }
+        return { ...current, [libraryFileId]: [...existing, collectionId] };
+      });
+
+      try {
+        await addFileToCollectionApi(libraryFileId, collectionId);
+        await refreshCollections();
+      } catch (err) {
+        await refreshCollections();
+        setError(toUserError(err, "Could not add that model to the collection."));
+        throw err;
+      }
+    },
+    [clearError, refreshCollections],
+  );
+
+  const removeFileFromCollection = useCallback(
+    async (libraryFileId: LibraryFileId, collectionId: string) => {
+      clearError();
+      setFileCollectionMap((current) => {
+        const existing = current[libraryFileId];
+        if (!existing) {
+          return current;
+        }
+        return {
+          ...current,
+          [libraryFileId]: existing.filter((id) => id !== collectionId),
+        };
+      });
+
+      try {
+        await removeFileFromCollectionApi(libraryFileId, collectionId);
+        await refreshCollections();
+      } catch (err) {
+        await refreshCollections();
+        setError(toUserError(err, "Could not remove that model from the collection."));
+        throw err;
+      }
+    },
+    [clearError, refreshCollections],
+  );
+
+  const addCollectionNameToFile = useCallback(
+    async (libraryFileId: LibraryFileId, name: string) => {
+      const collection = await createCollection(name);
+      await addFileToCollection(libraryFileId, collection.id);
+      return collection;
+    },
+    [addFileToCollection, createCollection],
+  );
+
   const value = useMemo(
     () => ({
       locations,
@@ -444,6 +611,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       favoriteIds,
       tags,
       fileTagMap,
+      collections,
+      fileCollectionMap,
       ready,
       scanning,
       scanningLabel,
@@ -464,6 +633,13 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       addTagToFile,
       removeTagFromFile,
       addTagNameToFile,
+      collectionsForLibraryFile,
+      createCollection,
+      renameCollection,
+      deleteCollection,
+      addFileToCollection,
+      removeFileFromCollection,
+      addCollectionNameToFile,
     }),
     [
       locations,
@@ -471,6 +647,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       favoriteIds,
       tags,
       fileTagMap,
+      collections,
+      fileCollectionMap,
       ready,
       scanning,
       scanningLabel,
@@ -491,6 +669,13 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       addTagToFile,
       removeTagFromFile,
       addTagNameToFile,
+      collectionsForLibraryFile,
+      createCollection,
+      renameCollection,
+      deleteCollection,
+      addFileToCollection,
+      removeFileFromCollection,
+      addCollectionNameToFile,
     ],
   );
 

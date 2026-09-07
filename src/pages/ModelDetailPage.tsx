@@ -16,6 +16,7 @@ import {
   fileParentDir,
   libraryBrowseHref,
 } from "@/lib/libraryBrowse";
+import { ModelCollections } from "@/components/model/ModelCollections";
 import { ModelTags } from "@/components/model/ModelTags";
 
 export function ModelDetailPage() {
@@ -134,6 +135,7 @@ export function ModelDetailPage() {
         ) : null}
 
         <ModelTags libraryFileId={file.libraryFileId} />
+        <ModelCollections libraryFileId={file.libraryFileId} />
         <ModelMetadata file={file} />
         <ModelFileInfo file={file} locationName={locationName} />
       </div>

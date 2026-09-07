@@ -4,11 +4,14 @@ mod repositories;
 
 use database::Database;
 use library::{
-    add_favorite, add_file_tag, add_library_location, create_tag, delete_tag, get_all_file_tags,
-    get_background_tasks, get_collections, get_favorite_ids, get_file_tag_ids, get_library_files,
+    add_favorite, add_file_tag, add_file_to_collection, add_library_location, create_collection,
+    create_tag, delete_collection, delete_tag, get_all_file_collections, get_all_file_tags,
+    get_background_tasks, get_collection, get_collection_file_count, get_collection_file_ids,
+    get_collections, get_favorite_ids, get_file_collection_ids, get_file_tag_ids, get_library_files,
     get_library_locations, get_library_snapshot, get_model_geometry, get_projects, get_tag_file_ids,
-    get_tags, is_favorite, remove_favorite, remove_file_tag, remove_library_location, rename_tag,
-    scan_library, scan_library_location, search_library_files, LibraryState,
+    get_tags, is_favorite, remove_favorite, remove_file_from_collection, remove_file_tag,
+    remove_library_location, rename_collection, rename_tag, scan_library, scan_library_location,
+    search_library_files, LibraryState,
 };
 use tauri::Manager;
 
@@ -36,6 +39,16 @@ pub fn run() {
             get_background_tasks,
             get_projects,
             get_collections,
+            get_collection,
+            create_collection,
+            rename_collection,
+            delete_collection,
+            add_file_to_collection,
+            remove_file_from_collection,
+            get_file_collection_ids,
+            get_collection_file_ids,
+            get_collection_file_count,
+            get_all_file_collections,
             get_tags,
             create_tag,
             rename_tag,

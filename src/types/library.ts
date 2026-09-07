@@ -169,6 +169,13 @@ export type Collection = {
   name: string;
   createdAt: number;
   updatedAt: number;
+  fileCount: number;
+  previewFileIds: string[];
+};
+
+export type FileCollection = {
+  libraryFileId: string;
+  collectionId: string;
 };
 
 export type Tag = {

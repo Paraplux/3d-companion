@@ -4,6 +4,7 @@ import type {
   AddLibraryLocationResult,
   BackgroundTasksEvent,
   Collection,
+  FileCollection,
   FileTag,
   LibraryFile,
   LibraryLocation,
@@ -50,6 +51,40 @@ export function getProjects(): Promise<Project[]> {
 
 export function getCollections(): Promise<Collection[]> {
   return invoke("get_collections");
+}
+
+export function getCollection(collectionId: string): Promise<Collection | null> {
+  return invoke("get_collection", { collectionId });
+}
+
+export function createCollection(name: string): Promise<Collection> {
+  return invoke("create_collection", { name });
+}
+
+export function renameCollection(collectionId: string, name: string): Promise<Collection> {
+  return invoke("rename_collection", { collectionId, name });
+}
+
+export function deleteCollection(collectionId: string): Promise<void> {
+  return invoke("delete_collection", { collectionId });
+}
+
+export function addFileToCollection(
+  libraryFileId: string,
+  collectionId: string,
+): Promise<void> {
+  return invoke("add_file_to_collection", { libraryFileId, collectionId });
+}
+
+export function removeFileFromCollection(
+  libraryFileId: string,
+  collectionId: string,
+): Promise<void> {
+  return invoke("remove_file_from_collection", { libraryFileId, collectionId });
+}
+
+export function getAllFileCollections(): Promise<FileCollection[]> {
+  return invoke("get_all_file_collections");
 }
 
 export function getTags(): Promise<Tag[]> {
