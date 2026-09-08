@@ -45,6 +45,7 @@ import {
   upsertFileNote as upsertFileNoteApi,
 } from "@/lib/libraryApi";
 import { buildFileCollectionMap, collectionsForFile } from "@/lib/collections";
+import type { LibrarySearchRequest } from "@/lib/librarySearch";
 import { buildFileNoteMap, hasFileNote } from "@/lib/notes";
 import { buildFileProjectMap, projectsForFile } from "@/lib/projects";
 import { buildFileTagMap, tagsForFile } from "@/lib/tags";
@@ -78,7 +79,7 @@ type LibraryContextValue = {
   addFolder: () => Promise<void>;
   removeFolder: (path: string) => Promise<void>;
   rescan: () => Promise<void>;
-  search: (query: string) => Promise<LibraryFile[]>;
+  search: (request: LibrarySearchRequest) => Promise<LibraryFile[]>;
   isFavorite: (libraryFileId: LibraryFileId) => boolean;
   addFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
   removeFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
@@ -413,8 +414,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }
   }, [clearError]);
 
-  const search = useCallback(async (query: string) => {
-    return searchLibraryFiles(query);
+  const search = useCallback(async (request: LibrarySearchRequest) => {
+    return searchLibraryFiles(request);
   }, []);
 
   const favoriteIdSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);

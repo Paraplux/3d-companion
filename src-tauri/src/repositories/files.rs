@@ -270,30 +270,201 @@ pub fn delete_by_location_path(conn: &Connection, location_path: &str) -> Result
     Ok(())
 }
 
-pub fn search_files(
+/// Combined text search + filters.
+///
+/// Within a multi-select category: OR. Across categories: AND.
+pub fn query_library_files(
     conn: &Connection,
-    query: &str,
+    request: &crate::library::models::LibrarySearchRequest,
     thumbnails_dir: &Path,
 ) -> Result<Vec<LibraryFile>, String> {
-    let needle = format!("%{}%", query.trim().to_lowercase());
-    let mut statement = conn
-        .prepare(&format!(
-            "{FILE_SELECT}
-             WHERE lower(f.name) LIKE ?1
+    use rusqlite::types::Value;
+
+    if request.is_empty() {
+        return list_files(conn, thumbnails_dir);
+    }
+
+    let mut sql = format!("{FILE_SELECT} WHERE 1=1");
+    let mut binds: Vec<Value> = Vec::new();
+
+    let trimmed_query = request.query.trim().to_lowercase();
+    if !trimmed_query.is_empty() {
+        let needle = format!("%{trimmed_query}%");
+        sql.push_str(
+            " AND (
+                lower(f.name) LIKE ?1
                 OR lower(f.extension) LIKE ?1
                 OR lower(f.relative_path) LIKE ?1
                 OR lower(f.path) LIKE ?1
-             ORDER BY f.name COLLATE NOCASE ASC
-             LIMIT 500"
-        ))
-        .map_err(|error| format!("Could not search files: {error}"))?;
+                OR EXISTS (
+                    SELECT 1 FROM file_notes n
+                    WHERE n.library_file_id = f.library_file_id
+                      AND lower(n.content) LIKE ?1
+                )
+                OR EXISTS (
+                    SELECT 1 FROM file_tags ft
+                    JOIN tags t ON t.id = ft.tag_id
+                    WHERE ft.library_file_id = f.library_file_id
+                      AND lower(t.name) LIKE ?1
+                )
+                OR EXISTS (
+                    SELECT 1 FROM collection_files cf
+                    JOIN collections c ON c.id = cf.collection_id
+                    WHERE cf.library_file_id = f.library_file_id
+                      AND lower(c.name) LIKE ?1
+                )
+                OR EXISTS (
+                    SELECT 1 FROM project_files pf
+                    JOIN projects p ON p.id = pf.project_id
+                    WHERE pf.library_file_id = f.library_file_id
+                      AND (
+                        lower(p.name) LIKE ?1
+                        OR lower(COALESCE(p.description, '')) LIKE ?1
+                      )
+                )
+            )",
+        );
+        binds.push(Value::Text(needle));
+    }
+
+    let formats: Vec<String> = request
+        .formats
+        .iter()
+        .map(|value| value.trim().trim_start_matches('.').to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if !formats.is_empty() {
+        let start = binds.len() + 1;
+        let placeholders = (0..formats.len())
+            .map(|index| format!("?{}", start + index))
+            .collect::<Vec<_>>()
+            .join(", ");
+        sql.push_str(&format!(" AND lower(f.extension) IN ({placeholders})"));
+        for format in formats {
+            binds.push(Value::Text(format));
+        }
+    }
+
+    if request.favorites_only {
+        sql.push_str(
+            " AND EXISTS (
+                SELECT 1 FROM favorites fav
+                WHERE fav.library_file_id = f.library_file_id
+            )",
+        );
+    }
+
+    let tag_ids: Vec<String> = request
+        .tag_ids
+        .iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if !tag_ids.is_empty() {
+        let start = binds.len() + 1;
+        let placeholders = (0..tag_ids.len())
+            .map(|index| format!("?{}", start + index))
+            .collect::<Vec<_>>()
+            .join(", ");
+        sql.push_str(&format!(
+            " AND EXISTS (
+                SELECT 1 FROM file_tags ft
+                WHERE ft.library_file_id = f.library_file_id
+                  AND ft.tag_id IN ({placeholders})
+            )"
+        ));
+        for id in tag_ids {
+            binds.push(Value::Text(id));
+        }
+    }
+
+    let collection_ids: Vec<String> = request
+        .collection_ids
+        .iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if !collection_ids.is_empty() {
+        let start = binds.len() + 1;
+        let placeholders = (0..collection_ids.len())
+            .map(|index| format!("?{}", start + index))
+            .collect::<Vec<_>>()
+            .join(", ");
+        sql.push_str(&format!(
+            " AND EXISTS (
+                SELECT 1 FROM collection_files cf
+                WHERE cf.library_file_id = f.library_file_id
+                  AND cf.collection_id IN ({placeholders})
+            )"
+        ));
+        for id in collection_ids {
+            binds.push(Value::Text(id));
+        }
+    }
+
+    let project_ids: Vec<String> = request
+        .project_ids
+        .iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if !project_ids.is_empty() {
+        let start = binds.len() + 1;
+        let placeholders = (0..project_ids.len())
+            .map(|index| format!("?{}", start + index))
+            .collect::<Vec<_>>()
+            .join(", ");
+        sql.push_str(&format!(
+            " AND EXISTS (
+                SELECT 1 FROM project_files pf
+                WHERE pf.library_file_id = f.library_file_id
+                  AND pf.project_id IN ({placeholders})
+            )"
+        ));
+        for id in project_ids {
+            binds.push(Value::Text(id));
+        }
+    }
+
+    if let Some(ecosystem) = request
+        .ecosystem
+        .as_ref()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+    {
+        match ecosystem.as_str() {
+            "bambu" => {
+                sql.push_str(
+                    " AND json_extract(m.metadata_json, '$.threemf.isBambu') = 1",
+                );
+            }
+            "none" => {
+                sql.push_str(
+                    " AND (
+                        m.metadata_json IS NULL
+                        OR json_extract(m.metadata_json, '$.threemf.isBambu') IS NULL
+                        OR json_extract(m.metadata_json, '$.threemf.isBambu') = 0
+                    )",
+                );
+            }
+            _ => {}
+        }
+    }
+
+    sql.push_str(" ORDER BY f.name COLLATE NOCASE ASC LIMIT 1000");
+
+    let mut statement = conn
+        .prepare(&sql)
+        .map_err(|error| format!("Could not prepare library query: {error}"))?;
 
     let rows = statement
-        .query_map(params![needle], |row| map_library_file(row, thumbnails_dir))
-        .map_err(|error| format!("Could not run file search: {error}"))?;
+        .query_map(rusqlite::params_from_iter(binds.iter()), |row| {
+            map_library_file(row, thumbnails_dir)
+        })
+        .map_err(|error| format!("Could not run library query: {error}"))?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("Could not read search results: {error}"))
+        .map_err(|error| format!("Could not read library query results: {error}"))
 }
 
 pub fn files_needing_analysis(conn: &Connection) -> Result<Vec<(String, String, String, String)>, String> {

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { EcosystemIcon } from "@/components/library/EcosystemIcon";
 import { FavoriteButton } from "@/components/library/FavoriteButton";
 import { FileFormatBadge } from "@/components/library/FileFormatBadge";
@@ -21,16 +21,24 @@ import { ModelNotes } from "@/components/model/ModelNotes";
 import { ModelProjects } from "@/components/model/ModelProjects";
 import { ModelTags } from "@/components/model/ModelTags";
 
+type DetailLocationState = {
+  libraryReturnTo?: string;
+};
+
 export function ModelDetailPage() {
   const { fileId } = useParams<{ fileId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { files, locations, ready } = useLibrary();
+
+  const returnTo =
+    (location.state as DetailLocationState | null)?.libraryReturnTo ?? "/library";
 
   const file = fileId
     ? files.find((entry) => entry.libraryFileId === fileId)
     : undefined;
   const locationName = file
-    ? locations.find((location) => location.path === file.locationPath)?.name
+    ? locations.find((locationEntry) => locationEntry.path === file.locationPath)?.name
     : undefined;
 
   const breadcrumbItems = useMemo(() => {
@@ -42,7 +50,7 @@ export function ModelDetailPage() {
     const items: Array<{ label: string; onClick?: () => void }> = [
       {
         label: "Library",
-        onClick: () => navigate("/library"),
+        onClick: () => navigate(returnTo),
       },
     ];
 
@@ -54,7 +62,6 @@ export function ModelDetailPage() {
             libraryBrowseHref({
               locationPath: file.locationPath,
               relativeDir: "",
-              tagId: null,
             }),
           ),
       });
@@ -74,7 +81,6 @@ export function ModelDetailPage() {
               libraryBrowseHref({
                 locationPath: file.locationPath,
                 relativeDir,
-                tagId: null,
               }),
             ),
         });
@@ -83,7 +89,7 @@ export function ModelDetailPage() {
 
     items.push({ label: displayName });
     return items;
-  }, [file, locationName, navigate]);
+  }, [file, locationName, navigate, returnTo]);
 
   if (!ready) {
     return (
@@ -100,7 +106,7 @@ export function ModelDetailPage() {
           title="Model not found"
           description="This model is no longer in your library, or the link is invalid."
           action={
-            <Link className="button button--primary" to="/library">
+            <Link className="button button--primary" to={returnTo}>
               Back to Library
             </Link>
           }

@@ -1,7 +1,8 @@
 use tauri::{AppHandle, State};
 
 use crate::library::models::{
-    AddLibraryLocationResult, BackgroundTasksEvent, LibraryFile, LibraryLocation, LibrarySnapshot,
+    AddLibraryLocationResult, BackgroundTasksEvent, LibraryFile, LibraryLocation,
+    LibrarySearchRequest, LibrarySnapshot,
 };
 use crate::library::state::LibraryState;
 use crate::repositories::collections::{
@@ -91,9 +92,9 @@ pub fn scan_library(
 #[tauri::command]
 pub fn search_library_files(
     state: State<'_, LibraryState>,
-    query: String,
+    request: LibrarySearchRequest,
 ) -> Result<Vec<LibraryFile>, String> {
-    state.search_files(&query)
+    state.query_files(&request)
 }
 
 #[tauri::command]

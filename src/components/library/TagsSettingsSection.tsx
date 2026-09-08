@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { useLibrary } from "@/hooks/useLibrary";
-import { libraryBrowseHref } from "@/lib/libraryBrowse";
+import { libraryHrefForTag } from "@/lib/libraryBrowse";
 import type { Tag } from "@/types/library";
 
 export function TagsSettingsSection() {
@@ -163,15 +163,7 @@ export function TagsSettingsSection() {
                     <button
                       type="button"
                       className="tag-list__main"
-                      onClick={() =>
-                        navigate(
-                          libraryBrowseHref({
-                            locationPath: null,
-                            relativeDir: "",
-                            tagId: tag.id,
-                          }),
-                        )
-                      }
+                      onClick={() => navigate(libraryHrefForTag(tag.id))}
                       title={`Show models tagged ${tag.name}`}
                     >
                       <span className="tag-list__name">{tag.name}</span>

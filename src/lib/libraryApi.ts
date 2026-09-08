@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ModelGeometryResponse } from "@/types/geometry";
+import type { LibrarySearchRequest } from "@/lib/librarySearch";
 import type {
   AddLibraryLocationResult,
   BackgroundTasksEvent,
@@ -43,8 +44,8 @@ export function scanLibrary(): Promise<LibraryFile[]> {
   return invoke("scan_library");
 }
 
-export function searchLibraryFiles(query: string): Promise<LibraryFile[]> {
-  return invoke("search_library_files", { query });
+export function searchLibraryFiles(request: LibrarySearchRequest): Promise<LibraryFile[]> {
+  return invoke("search_library_files", { request });
 }
 
 export function getProjects(): Promise<Project[]> {

@@ -1,4 +1,15 @@
+/**
+ * Library folder navigation URL state (`loc`, `dir`).
+ * Search / filters live in `librarySearch.ts` and share the same query string.
+ */
+
 import type { LibraryFile, LibraryLocation, SortDirection, SortField } from "@/types/library";
+import {
+  applySearchToParams,
+  EMPTY_LIBRARY_SEARCH,
+  searchFromSearchParams,
+  type LibrarySearchFilters,
+} from "@/lib/librarySearch";
 
 export type FolderEntry = {
   name: string;
@@ -10,8 +21,11 @@ export type FolderEntry = {
 export type BrowseState = {
   locationPath: string | null;
   relativeDir: string;
-  /** Optional Library filter by stable tag id. */
-  tagId: string | null;
+};
+
+export type LibraryUrlState = {
+  browse: BrowseState;
+  search: LibrarySearchFilters;
 };
 
 export function parentRelativeDir(relativeDir: string): string {
@@ -24,36 +38,50 @@ export function fileParentDir(relativePath: string): string {
   return index === -1 ? "" : relativePath.slice(0, index);
 }
 
-/** Restore library folder / tag navigation from `/library?loc=&dir=&tag=`. */
-export function browseFromSearchParams(params: URLSearchParams): BrowseState {
+/** Restore library folder + search state from `/library?…`. */
+export function libraryUrlFromSearchParams(params: URLSearchParams): LibraryUrlState {
   const locationPath = params.get("loc");
-  const relativeDir = params.get("dir") ?? "";
-  const tagId = params.get("tag");
   return {
-    locationPath: locationPath && locationPath.length > 0 ? locationPath : null,
-    relativeDir,
-    tagId: tagId && tagId.length > 0 ? tagId : null,
+    browse: {
+      locationPath: locationPath && locationPath.length > 0 ? locationPath : null,
+      relativeDir: params.get("dir") ?? "",
+    },
+    search: searchFromSearchParams(params),
   };
 }
 
-/** Serialize browse state for the Library route (empty at root). */
-export function browseToSearchParams(browse: BrowseState): URLSearchParams {
+/** @deprecated Prefer `libraryUrlFromSearchParams`. */
+export function browseFromSearchParams(params: URLSearchParams): BrowseState {
+  return libraryUrlFromSearchParams(params).browse;
+}
+
+/** Serialize browse + search for the Library route. */
+export function libraryUrlToSearchParams(state: LibraryUrlState): URLSearchParams {
   const params = new URLSearchParams();
-  if (browse.locationPath) {
-    params.set("loc", browse.locationPath);
-    if (browse.relativeDir) {
-      params.set("dir", browse.relativeDir);
+  if (state.browse.locationPath) {
+    params.set("loc", state.browse.locationPath);
+    if (state.browse.relativeDir) {
+      params.set("dir", state.browse.relativeDir);
     }
   }
-  if (browse.tagId) {
-    params.set("tag", browse.tagId);
-  }
+  applySearchToParams(params, state.search);
   return params;
 }
 
-/** Build a Library href for a browse location. */
-export function libraryBrowseHref(browse: BrowseState): string {
-  const params = browseToSearchParams(browse);
+/** Serialize browse only (clears search params). Prefer `libraryUrlToSearchParams`. */
+export function browseToSearchParams(browse: BrowseState): URLSearchParams {
+  return libraryUrlToSearchParams({
+    browse,
+    search: EMPTY_LIBRARY_SEARCH,
+  });
+}
+
+/** Build a Library href for browse + optional search. */
+export function libraryBrowseHref(
+  browse: BrowseState,
+  search: LibrarySearchFilters = EMPTY_LIBRARY_SEARCH,
+): string {
+  const params = libraryUrlToSearchParams({ browse, search });
   const query = params.toString();
   return query ? `/library?${query}` : "/library";
 }
@@ -61,13 +89,19 @@ export function libraryBrowseHref(browse: BrowseState): string {
 /** Build a Library href that opens the folder containing this file. */
 export function libraryHrefForFile(
   file: Pick<LibraryFile, "locationPath" | "relativePath">,
-  tagId: string | null = null,
 ): string {
   return libraryBrowseHref({
     locationPath: file.locationPath,
     relativeDir: fileParentDir(file.relativePath),
-    tagId,
   });
+}
+
+/** Build a Library href filtered to one tag (Settings → Tags). */
+export function libraryHrefForTag(tagId: string): string {
+  return libraryBrowseHref(
+    { locationPath: null, relativeDir: "" },
+    { ...EMPTY_LIBRARY_SEARCH, tagIds: [tagId] },
+  );
 }
 
 export function collectFolders(

@@ -275,6 +275,52 @@ pub struct AddLibraryLocationResult {
     pub files: Vec<LibraryFile>,
 }
 
+/// Library search + filters (Phase 5.4).
+///
+/// Semantics:
+/// - Text `query` matches name / extension / paths / note content /
+///   tag / collection / project names (OR across those fields).
+/// - Within one multi-select category (formats, tags, …): OR.
+/// - Across different categories: AND.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LibrarySearchRequest {
+    #[serde(default)]
+    pub query: String,
+    /// Lowercase extensions without dot, e.g. `["3mf","stl"]`.
+    #[serde(default)]
+    pub formats: Vec<String>,
+    #[serde(default)]
+    pub favorites_only: bool,
+    #[serde(default)]
+    pub tag_ids: Vec<String>,
+    #[serde(default)]
+    pub collection_ids: Vec<String>,
+    #[serde(default)]
+    pub project_ids: Vec<String>,
+    /// `"bambu"` | `"none"` — omit / empty = no ecosystem filter.
+    #[serde(default)]
+    pub ecosystem: Option<String>,
+}
+
+impl LibrarySearchRequest {
+    pub fn has_filters(&self) -> bool {
+        !self.formats.is_empty()
+            || self.favorites_only
+            || !self.tag_ids.is_empty()
+            || !self.collection_ids.is_empty()
+            || !self.project_ids.is_empty()
+            || self
+                .ecosystem
+                .as_ref()
+                .is_some_and(|value| !value.trim().is_empty())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.query.trim().is_empty() && !self.has_filters()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum LibraryEvent {

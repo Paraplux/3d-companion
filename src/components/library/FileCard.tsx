@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { EcosystemIcon } from "@/components/library/EcosystemIcon";
 import { FavoriteButton } from "@/components/library/FavoriteButton";
@@ -77,6 +77,7 @@ export function FileCard({
   onRemoveFromCollection,
   onRemoveFromProject,
 }: FileCardProps) {
+  const location = useLocation();
   const { tagsForLibraryFile, hasNote } = useLibrary();
   const pathLabel = showLocation
     ? [locationName, formatRelativePath(file.relativePath)].filter(Boolean).join(" / ")
@@ -111,6 +112,7 @@ export function FileCard({
   return (
     <Link
       to={`/library/file/${file.libraryFileId}`}
+      state={{ libraryReturnTo: `${location.pathname}${location.search}` }}
       className="file-card"
       title={file.path}
     >

@@ -178,14 +178,16 @@ impl LibraryState {
         self.list_files()
     }
 
-    pub fn search_files(&self, query: &str) -> Result<Vec<LibraryFile>, String> {
-        let trimmed = query.trim();
-        if trimmed.is_empty() {
-            return self.list_files();
-        }
-
+    pub fn query_files(
+        &self,
+        request: &crate::library::models::LibrarySearchRequest,
+    ) -> Result<Vec<LibraryFile>, String> {
         self.db.with_conn(|conn| {
-            crate::repositories::files::search_files(conn, trimmed, &self.thumbnails_dir)
+            crate::repositories::files::query_library_files(
+                conn,
+                request,
+                &self.thumbnails_dir,
+            )
         })
     }
 
