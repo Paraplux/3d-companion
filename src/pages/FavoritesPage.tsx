@@ -6,7 +6,14 @@ import { useLibrary } from "@/hooks/useLibrary";
 import { resolveFavoriteFiles } from "@/lib/favorites";
 
 export function FavoritesPage() {
-  const { files, locations, favoriteIds, ready } = useLibrary();
+  const {
+    files,
+    locations,
+    favoriteIds,
+    ready,
+    error,
+    clearError,
+  } = useLibrary();
   const favorites = resolveFavoriteFiles(files, favoriteIds);
 
   if (!ready) {
@@ -27,6 +34,15 @@ export function FavoritesPage() {
   return (
     <section className="page page--library">
       <PageHeader title="Favorites" subtitle={subtitle} />
+
+      {error ? (
+        <div className="banner banner--error" role="alert">
+          <p>{error}</p>
+          <button type="button" className="banner__dismiss" onClick={clearError}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       {favorites.length === 0 ? (
         <EmptyState

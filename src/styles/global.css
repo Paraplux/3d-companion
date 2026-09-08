@@ -1808,6 +1808,17 @@ a:focus-visible {
   padding-inline: 0.55rem;
 }
 
+.library-results-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.library-grid--pending {
+  opacity: 0.72;
+  transition: opacity 120ms ease;
+}
+
 .button--ghost {
   color: var(--text-secondary);
   background: transparent;
@@ -1896,6 +1907,26 @@ a:focus-visible {
   padding-bottom: 2rem;
 }
 
+.model-detail__status {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.model-detail__status--error {
+  color: #9b1c1c;
+  background: rgba(255, 59, 48, 0.1);
+  border-color: rgba(255, 59, 48, 0.2);
+}
+
+[data-theme="dark"] .model-detail__status--error {
+  color: #ff8a80;
+}
+
 .model-viewer-placeholder {
   position: relative;
   display: grid;
@@ -1976,6 +2007,32 @@ a:focus-visible {
   line-height: 1.4;
 }
 
+.model-viewer__overlay--toast {
+  inset: auto 0.75rem 0.75rem auto;
+  place-content: end;
+  padding: 0.45rem 0.65rem;
+  color: var(--text);
+  font-size: 0.78rem;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.model-viewer__analysis-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.model-viewer__analysis-hint--error {
+  color: #9b1c1c;
+}
+
+[data-theme="dark"] .model-viewer__analysis-hint--error {
+  color: #ff8a80;
+}
+
 .model-viewer--message {
   min-height: 12rem;
   display: grid;
@@ -1988,9 +2045,10 @@ a:focus-visible {
 
 .model-viewer__toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.55rem 0.75rem;
   min-height: 2rem;
 }
 
@@ -2401,6 +2459,8 @@ a:focus-visible {
   transition:
     background-color 120ms ease,
     border-color 120ms ease;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 16rem;
 }
 
 .file-card:focus-visible {

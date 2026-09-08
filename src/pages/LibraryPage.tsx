@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FileCard } from "@/components/library/FileCard";
 import { FolderCard } from "@/components/library/FolderCard";
@@ -33,6 +33,10 @@ export function LibraryPage() {
     tags,
     collections,
     projects,
+    favoriteIds,
+    fileTagMap,
+    fileCollectionMap,
+    fileProjectMap,
     ready,
     scanning,
     scanningLabel,
@@ -84,16 +88,56 @@ export function LibraryPage() {
   const [searchPending, setSearchPending] = useState(false);
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
 
-  const filtering = hasActiveSearchOrFilters(filters);
+  // URL filters drive SQLite; draftQuery is debounced into the URL.
+  const searchFilters = filters;
+  const isFiltering = hasActiveSearchOrFilters(searchFilters);
+
   const currentLocation = browse.locationPath
     ? locationByPath(locations, browse.locationPath)
     : undefined;
+
+  const locationNameByPath = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const location of locations) {
+      map.set(location.path, location.name);
+    }
+    return map;
+  }, [locations]);
+
+  const locationFileCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const file of files) {
+      counts.set(file.locationPath, (counts.get(file.locationPath) ?? 0) + 1);
+    }
+    return counts;
+  }, [files]);
+
+  const filesById = useMemo(() => {
+    const map = new Map<string, LibraryFile>();
+    for (const file of files) {
+      map.set(file.libraryFileId, file);
+    }
+    return map;
+  }, [files]);
 
   // Keep draft input in sync when URL changes (back/forward, clear).
   useEffect(() => {
     setDraftQuery(filters.query);
   }, [filters.query]);
+
+  // Debounce query → URL (filter toggles write immediately via setFilters).
+  useEffect(() => {
+    if (draftQuery === filtersRef.current.query) {
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      setFilters({ ...filtersRef.current, query: draftQuery });
+    }, 180);
+    return () => window.clearTimeout(handle);
+  }, [draftQuery, setFilters]);
 
   // Drop stale folder / organization ids from URL.
   useEffect(() => {
@@ -155,7 +199,7 @@ export function LibraryPage() {
 
   // Debounced SQLite search when query or filters are active.
   useEffect(() => {
-    if (!filtering) {
+    if (!isFiltering) {
       setSearchResults(null);
       setSearchPending(false);
       return;
@@ -163,9 +207,9 @@ export function LibraryPage() {
 
     let cancelled = false;
     setSearchPending(true);
-    const delayMs = filters.query.trim().length > 0 ? 180 : 0;
+    const delayMs = searchFilters.query.trim().length > 0 ? 180 : 0;
     const handle = window.setTimeout(() => {
-      void search(toSearchRequest(filters)).then((results) => {
+      void search(toSearchRequest(searchFilters)).then((results) => {
         if (!cancelled) {
           setSearchResults(results);
           setSearchPending(false);
@@ -177,10 +221,10 @@ export function LibraryPage() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [filtering, filters, search]);
+  }, [isFiltering, search, searchFilters]);
 
   const visibleFolders = useMemo(() => {
-    if (filtering) {
+    if (isFiltering) {
       return [];
     }
 
@@ -189,16 +233,71 @@ export function LibraryPage() {
         name: location.name,
         relativeDir: "",
         locationPath: location.path,
-        itemCount: files.filter((file) => file.locationPath === location.path).length,
+        itemCount: locationFileCounts.get(location.path) ?? 0,
       }));
     }
 
     return collectFolders(files, browse.locationPath, browse.relativeDir);
-  }, [browse.locationPath, browse.relativeDir, files, filtering, locations]);
+  }, [
+    browse.locationPath,
+    browse.relativeDir,
+    files,
+    isFiltering,
+    locationFileCounts,
+    locations,
+  ]);
+
+  const liveSearchFiles = useMemo(() => {
+    if (!searchResults) {
+      return [];
+    }
+
+    // Prefer live library rows so analysis / thumbnails stay fresh while filtering.
+    let rows = searchResults.map(
+      (result) => filesById.get(result.libraryFileId) ?? result,
+    );
+
+    // Prune stale membership after optimistic favorite/tag/collection/project edits.
+    if (searchFilters.favoritesOnly) {
+      const favorites = new Set(favoriteIds);
+      rows = rows.filter((file) => favorites.has(file.libraryFileId));
+    }
+    if (searchFilters.tagIds.length > 0) {
+      const wanted = new Set(searchFilters.tagIds);
+      rows = rows.filter((file) =>
+        (fileTagMap[file.libraryFileId] ?? []).some((id) => wanted.has(id)),
+      );
+    }
+    if (searchFilters.collectionIds.length > 0) {
+      const wanted = new Set(searchFilters.collectionIds);
+      rows = rows.filter((file) =>
+        (fileCollectionMap[file.libraryFileId] ?? []).some((id) => wanted.has(id)),
+      );
+    }
+    if (searchFilters.projectIds.length > 0) {
+      const wanted = new Set(searchFilters.projectIds);
+      rows = rows.filter((file) =>
+        (fileProjectMap[file.libraryFileId] ?? []).some((id) => wanted.has(id)),
+      );
+    }
+
+    return rows;
+  }, [
+    favoriteIds,
+    fileCollectionMap,
+    fileProjectMap,
+    fileTagMap,
+    filesById,
+    searchFilters.collectionIds,
+    searchFilters.favoritesOnly,
+    searchFilters.projectIds,
+    searchFilters.tagIds,
+    searchResults,
+  ]);
 
   const visibleFiles = useMemo(() => {
-    if (filtering) {
-      return sortFiles(searchResults ?? [], sortField, sortDirection);
+    if (isFiltering) {
+      return sortFiles(liveSearchFiles, sortField, sortDirection);
     }
 
     if (!browse.locationPath) {
@@ -214,11 +313,13 @@ export function LibraryPage() {
     browse.locationPath,
     browse.relativeDir,
     files,
-    filtering,
-    searchResults,
+    isFiltering,
+    liveSearchFiles,
     sortDirection,
     sortField,
   ]);
+
+  const resultsTruncated = isFiltering && (searchResults?.length ?? 0) >= 1000;
 
   const breadcrumbItems = useMemo(() => {
     const items: Array<{ label: string; onClick?: () => void }> = [
@@ -354,8 +455,10 @@ export function LibraryPage() {
     setFilters(EMPTY_LIBRARY_SEARCH);
   }, [setFilters]);
 
-  const itemCountLabel = filtering
-    ? `${visibleFiles.length} result${visibleFiles.length === 1 ? "" : "s"}`
+  const itemCountLabel = isFiltering
+    ? `${visibleFiles.length} result${visibleFiles.length === 1 ? "" : "s"}${
+        searchPending ? "…" : ""
+      }`
     : browse.locationPath
       ? `${visibleFolders.length + visibleFiles.length} item${
           visibleFolders.length + visibleFiles.length === 1 ? "" : "s"
@@ -368,7 +471,7 @@ export function LibraryPage() {
       ? "Your 3D models and projects"
       : currentLocation
         ? `${currentLocation.name} · ${itemCountLabel}`
-        : filtering
+        : isFiltering
           ? itemCountLabel
           : `${itemCountLabel}`;
 
@@ -400,16 +503,16 @@ export function LibraryPage() {
   }
 
   const showEmptyFolder =
-    !filtering &&
+    !isFiltering &&
     browse.locationPath !== null &&
     visibleFolders.length === 0 &&
     visibleFiles.length === 0;
 
   const showNoSearchResults =
-    filtering && !searchPending && visibleFiles.length === 0;
+    isFiltering && !searchPending && visibleFiles.length === 0;
   const showSearchPending =
-    filtering && searchPending && searchResults === null;
-  const showPathOnCards = filtering;
+    isFiltering && searchPending && searchResults === null;
+  const showPathOnCards = isFiltering;
 
   return (
     <section className="page page--library">
@@ -421,11 +524,7 @@ export function LibraryPage() {
             <input
               type="search"
               value={draftQuery}
-              onChange={(event) => {
-                const value = event.target.value;
-                setDraftQuery(value);
-                setFilters({ ...filters, query: value });
-              }}
+              onChange={(event) => setDraftQuery(event.target.value)}
               placeholder="Search models…"
             />
           </label>
@@ -513,12 +612,25 @@ export function LibraryPage() {
         </div>
       ) : null}
 
-      {!filtering ? <LibraryBreadcrumbs items={breadcrumbItems} /> : null}
+      {resultsTruncated ? (
+        <p className="library-results-hint" role="status">
+          Showing the first 1 000 matches. Narrow your search or filters to see more.
+        </p>
+      ) : null}
+
+      {!isFiltering ? <LibraryBreadcrumbs items={breadcrumbItems} /> : null}
 
       {showEmptyFolder ? (
         <EmptyState
           title="This folder doesn’t contain any supported 3D files."
           description="Supported formats: STL, 3MF, OBJ, STEP."
+        />
+      ) : null}
+
+      {showSearchPending ? (
+        <EmptyState
+          title="Searching…"
+          description="Looking for models that match your search and filters."
         />
       ) : null}
 
@@ -539,7 +651,11 @@ export function LibraryPage() {
       ) : null}
 
       {!showEmptyFolder && !showNoSearchResults && !showSearchPending ? (
-        <div className="library-grid">
+        <div
+          className={`library-grid${
+            isFiltering && searchPending ? " library-grid--pending" : ""
+          }`}
+        >
           {visibleFolders.map((folder) => (
             <FolderCard
               key={`${folder.locationPath}:${folder.relativeDir}:${folder.name}`}
@@ -562,15 +678,13 @@ export function LibraryPage() {
               file={file}
               showPath={showPathOnCards}
               showLocation={showPathOnCards && locations.length > 1}
-              locationName={
-                locationByPath(locations, file.locationPath)?.name
-              }
+              locationName={locationNameByPath.get(file.locationPath)}
             />
           ))}
         </div>
       ) : null}
 
-      {!filtering && browse.locationPath && browse.relativeDir ? (
+      {!isFiltering && browse.locationPath && browse.relativeDir ? (
         <div className="library-nav-hint">
           <button
             type="button"

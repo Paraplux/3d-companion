@@ -44,16 +44,17 @@ export function ModelPreview({ file }: ModelPreviewProps) {
     setCameraReset(0);
   }, [file.libraryFileId, initialPlateId]);
 
+  // Prefetch only after the user opens the viewer; then warm the next plate.
   useEffect(() => {
-    if (!previewable) {
+    if (!viewerActive || !previewable) {
       return;
     }
 
     let cancelled = false;
     const plateForFile = file.extension.toLowerCase() === "3mf" ? selectedPlateId : null;
-    const remaining = (file.threemf?.project?.plates ?? [])
+    const nextPlate = (file.threemf?.project?.plates ?? [])
       .filter((plate) => plate.id !== selectedPlateId)
-      .sort((a, b) => a.index - b.index);
+      .sort((a, b) => a.index - b.index)[0];
 
     void (async () => {
       try {
@@ -62,15 +63,14 @@ export function ModelPreview({ file }: ModelPreviewProps) {
         return;
       }
 
-      for (const plate of remaining) {
-        if (cancelled) {
-          return;
-        }
-        try {
-          await getModelGeometry(file.libraryFileId, plate.id, file.contentHash);
-        } catch {
-          // Keep prefetching other plates even if one fails.
-        }
+      if (cancelled || !nextPlate) {
+        return;
+      }
+
+      try {
+        await getModelGeometry(file.libraryFileId, nextPlate.id, file.contentHash);
+      } catch {
+        // Prefetch is best-effort.
       }
     })();
 
@@ -78,20 +78,25 @@ export function ModelPreview({ file }: ModelPreviewProps) {
       cancelled = true;
     };
   }, [
-    file.analysisStatus,
     file.contentHash,
     file.extension,
     file.libraryFileId,
+    file.threemf?.project?.plates,
     previewable,
     selectedPlateId,
+    viewerActive,
   ]);
 
   const showToolbar = plates.length > 1 || previewable || canOpenBambu;
+  const analyzing =
+    file.analysisStatus === "pending" || file.analysisStatus === "analyzing";
 
   return (
     <div className="model-viewer">
       <div className="model-viewer__stage">
-        <ModelViewerPlaceholder file={file} plateId={selectedPlateId} />
+        {viewerActive && previewable ? null : (
+          <ModelViewerPlaceholder file={file} plateId={selectedPlateId} />
+        )}
         {viewerActive && previewable ? (
           <Suspense
             fallback={
@@ -108,6 +113,18 @@ export function ModelPreview({ file }: ModelPreviewProps) {
           </Suspense>
         ) : null}
       </div>
+
+      {analyzing && !viewerActive ? (
+        <p className="model-viewer__analysis-hint" role="status">
+          Analyzing model… preview will update when ready.
+        </p>
+      ) : null}
+
+      {file.analysisStatus === "error" && !viewerActive ? (
+        <p className="model-viewer__analysis-hint model-viewer__analysis-hint--error" role="status">
+          Analysis failed. You can still open the file or try Rescan from Library.
+        </p>
+      ) : null}
 
       {showToolbar ? (
         <div className="model-viewer__toolbar">
@@ -137,6 +154,12 @@ export function ModelPreview({ file }: ModelPreviewProps) {
                 type="button"
                 className={viewerActive ? "button button--ghost" : "button button--primary"}
                 onClick={() => setViewerActive((active) => !active)}
+                disabled={analyzing && file.analysisStatus !== "ready" && !file.threemf && !file.stl}
+                title={
+                  analyzing && !file.threemf && !file.stl
+                    ? "Waiting for analysis…"
+                    : undefined
+                }
               >
                 {viewerActive ? "Close 3D" : "View 3D"}
               </button>

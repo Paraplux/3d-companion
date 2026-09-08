@@ -48,7 +48,7 @@ import { buildFileCollectionMap, collectionsForFile } from "@/lib/collections";
 import type { LibrarySearchRequest } from "@/lib/librarySearch";
 import { buildFileNoteMap, hasFileNote } from "@/lib/notes";
 import { buildFileProjectMap, projectsForFile } from "@/lib/projects";
-import { buildFileTagMap, tagsForFile } from "@/lib/tags";
+import { buildFileTagMap } from "@/lib/tags";
 import type {
   Collection,
   FileNote,
@@ -279,9 +279,13 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     let unlisten: (() => void) | undefined;
 
     void listen<LibraryEvent>("library://changed", (event) => {
+      if (cancelled) {
+        return;
+      }
       const payload = event.payload;
 
       if (payload.type === "locationUpdated") {
@@ -325,10 +329,15 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         });
       }
     }).then((fn) => {
+      if (cancelled) {
+        fn();
+        return;
+      }
       unlisten = fn;
     });
 
     return () => {
+      cancelled = true;
       unlisten?.();
     };
   }, [refreshNotes]);
@@ -478,9 +487,23 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [addFavorite, favoriteIdSet, removeFavorite],
   );
 
+  const tagsByFileId = useMemo(() => {
+    const byId = new Map(tags.map((tag) => [tag.id, tag]));
+    const result: Record<LibraryFileId, Tag[]> = {};
+    for (const [libraryFileId, tagIds] of Object.entries(fileTagMap)) {
+      result[libraryFileId] = tagIds
+        .map((id) => byId.get(id))
+        .filter((tag): tag is Tag => Boolean(tag))
+        .sort((left, right) =>
+          left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+        );
+    }
+    return result;
+  }, [fileTagMap, tags]);
+
   const tagsForLibraryFile = useCallback(
-    (libraryFileId: LibraryFileId) => tagsForFile(tags, fileTagMap, libraryFileId),
-    [fileTagMap, tags],
+    (libraryFileId: LibraryFileId) => tagsByFileId[libraryFileId] ?? [],
+    [tagsByFileId],
   );
 
   const createTag = useCallback(

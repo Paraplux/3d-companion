@@ -66,21 +66,24 @@ export function GeometryObjectMesh({
         next.computeVertexNormals();
         next.computeBoundingBox();
         current = next;
-        setGeometry(next);
+        setGeometry((existing) => {
+          existing?.dispose();
+          return next;
+        });
       })
       .catch(() => {
         if (!disposed) {
-          setGeometry(null);
+          setGeometry((existing) => {
+            existing?.dispose();
+            return null;
+          });
         }
       });
 
     return () => {
       disposed = true;
       current?.dispose();
-      setGeometry((existing) => {
-        existing?.dispose();
-        return null;
-      });
+      current = null;
     };
   }, [centerToOrigin, object.positionsPath]);
 

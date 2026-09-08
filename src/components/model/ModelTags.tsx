@@ -7,6 +7,8 @@ type ModelTagsProps = {
   libraryFileId: LibraryFileId;
 };
 
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
 export function ModelTags({ libraryFileId }: ModelTagsProps) {
   const {
     tags,
@@ -23,11 +25,14 @@ export function ModelTags({ libraryFileId }: ModelTagsProps) {
   );
 
   const [query, setQuery] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<SaveStatus>("idle");
+  const [localError, setLocalError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const savedTimerRef = useRef<number | null>(null);
 
+  const busy = status === "saving";
   const normalizedQuery = query.trim();
   const suggestions = useMemo(() => {
     const needle = normalizedQuery.toLowerCase();
@@ -48,6 +53,14 @@ export function ModelTags({ libraryFileId }: ModelTagsProps) {
     !assigned.some(
       (tag) => tag.name.toLowerCase() === normalizedQuery.toLowerCase(),
     );
+
+  useEffect(() => {
+    return () => {
+      if (savedTimerRef.current !== null) {
+        window.clearTimeout(savedTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -78,16 +91,29 @@ export function ModelTags({ libraryFileId }: ModelTagsProps) {
     };
   }, [open]);
 
+  function markSaved() {
+    setStatus("saved");
+    setLocalError(null);
+    if (savedTimerRef.current !== null) {
+      window.clearTimeout(savedTimerRef.current);
+    }
+    savedTimerRef.current = window.setTimeout(() => {
+      setStatus("idle");
+      savedTimerRef.current = null;
+    }, 1600);
+  }
+
   async function attachExisting(tagId: string) {
-    setBusy(true);
+    setStatus("saving");
+    setLocalError(null);
     try {
       await addTagToFile(libraryFileId, tagId);
       setQuery("");
       setOpen(false);
+      markSaved();
     } catch {
-      // Error surfaced via LibraryProvider.
-    } finally {
-      setBusy(false);
+      setStatus("error");
+      setLocalError("Could not add that tag.");
     }
   }
 
@@ -95,28 +121,63 @@ export function ModelTags({ libraryFileId }: ModelTagsProps) {
     if (!canCreate || busy) {
       return;
     }
-    setBusy(true);
+    setStatus("saving");
+    setLocalError(null);
     try {
       await addTagNameToFile(libraryFileId, normalizedQuery);
       setQuery("");
       setOpen(false);
+      markSaved();
     } catch {
-      // Error surfaced via LibraryProvider.
-    } finally {
-      setBusy(false);
+      setStatus("error");
+      setLocalError("Could not create that tag.");
     }
   }
+
+  async function removeTag(tagId: string) {
+    setStatus("saving");
+    setLocalError(null);
+    try {
+      await removeTagFromFile(libraryFileId, tagId);
+      markSaved();
+    } catch {
+      setStatus("error");
+      setLocalError("Could not remove that tag.");
+    }
+  }
+
+  const statusLabel =
+    status === "saving"
+      ? "Saving…"
+      : status === "saved"
+        ? "Saved"
+        : status === "error"
+          ? localError ?? "Could not update tags."
+          : null;
 
   return (
     <section className="model-meta-section model-tags" ref={rootRef}>
       <div className="model-tags__header">
         <h2 className="model-meta-section__title">Tags</h2>
         <div className="model-tags__action">
+          {statusLabel ? (
+            <span
+              className={
+                status === "error"
+                  ? "model-notes__status model-notes__status--unsaved"
+                  : "model-notes__status"
+              }
+              aria-live="polite"
+            >
+              {statusLabel}
+            </span>
+          ) : null}
           <button
             type="button"
             className="model-tags__add"
             aria-expanded={open}
             aria-haspopup="listbox"
+            disabled={busy}
             onClick={() => {
               setOpen((current) => !current);
               if (open) {
@@ -200,7 +261,7 @@ export function ModelTags({ libraryFileId }: ModelTagsProps) {
             <TagPill
               key={tag.id}
               tag={tag}
-              onRemove={() => void removeTagFromFile(libraryFileId, tag.id)}
+              onRemove={busy ? undefined : () => void removeTag(tag.id)}
             />
           ))}
         </div>

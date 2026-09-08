@@ -16,6 +16,10 @@ import {
   fileParentDir,
   libraryBrowseHref,
 } from "@/lib/libraryBrowse";
+import {
+  returnActionLabel,
+  returnLabelFromPath,
+} from "@/lib/navigationReturn";
 import { ModelCollections } from "@/components/model/ModelCollections";
 import { ModelNotes } from "@/components/model/ModelNotes";
 import { ModelProjects } from "@/components/model/ModelProjects";
@@ -33,6 +37,7 @@ export function ModelDetailPage() {
 
   const returnTo =
     (location.state as DetailLocationState | null)?.libraryReturnTo ?? "/library";
+  const returnLabel = returnLabelFromPath(returnTo);
 
   const file = fileId
     ? files.find((entry) => entry.libraryFileId === fileId)
@@ -49,12 +54,13 @@ export function ModelDetailPage() {
     const displayName = displayNameFromFilename(file.name);
     const items: Array<{ label: string; onClick?: () => void }> = [
       {
-        label: "Library",
+        label: returnLabel,
         onClick: () => navigate(returnTo),
       },
     ];
 
-    if (locationName) {
+    // Only show folder crumbs when returning to Library (not Favorites / Collection / Project).
+    if (returnLabel === "Library" && locationName) {
       items.push({
         label: locationName,
         onClick: () =>
@@ -65,31 +71,31 @@ export function ModelDetailPage() {
             }),
           ),
       });
-    }
 
-    const folderPath = fileParentDir(file.relativePath);
-    if (folderPath) {
-      const segments = folderPath.split("/").filter(Boolean);
-      let accumulated = "";
-      for (const segment of segments) {
-        accumulated = accumulated ? `${accumulated}/${segment}` : segment;
-        const relativeDir = accumulated;
-        items.push({
-          label: segment,
-          onClick: () =>
-            navigate(
-              libraryBrowseHref({
-                locationPath: file.locationPath,
-                relativeDir,
-              }),
-            ),
-        });
+      const folderPath = fileParentDir(file.relativePath);
+      if (folderPath) {
+        const segments = folderPath.split("/").filter(Boolean);
+        let accumulated = "";
+        for (const segment of segments) {
+          accumulated = accumulated ? `${accumulated}/${segment}` : segment;
+          const relativeDir = accumulated;
+          items.push({
+            label: segment,
+            onClick: () =>
+              navigate(
+                libraryBrowseHref({
+                  locationPath: file.locationPath,
+                  relativeDir,
+                }),
+              ),
+          });
+        }
       }
     }
 
     items.push({ label: displayName });
     return items;
-  }, [file, locationName, navigate, returnTo]);
+  }, [file, locationName, navigate, returnLabel, returnTo]);
 
   if (!ready) {
     return (
@@ -107,7 +113,7 @@ export function ModelDetailPage() {
           description="This model is no longer in your library, or the link is invalid."
           action={
             <Link className="button button--primary" to={returnTo}>
-              Back to Library
+              {returnActionLabel(returnTo)}
             </Link>
           }
         />
@@ -118,6 +124,8 @@ export function ModelDetailPage() {
   const displayName = displayNameFromFilename(file.name);
   const format = getFileFormat(file);
   const ecosystem = getFileEcosystem(file);
+  const analyzing =
+    file.analysisStatus === "pending" || file.analysisStatus === "analyzing";
 
   return (
     <section className="page page--model-detail">
@@ -133,6 +141,19 @@ export function ModelDetailPage() {
       </div>
 
       <div className="model-detail__body">
+        {analyzing ? (
+          <p className="model-detail__status" role="status">
+            Analyzing model… metadata and preview will update when ready.
+          </p>
+        ) : null}
+        {file.analysisStatus === "error" ? (
+          <p className="model-detail__status model-detail__status--error" role="status">
+            Analysis failed
+            {file.analysisError ? `: ${file.analysisError}` : "."} You can still
+            open the file or rescan from Library.
+          </p>
+        ) : null}
+
         <ModelPreview file={file} />
 
         {(format || ecosystem) ? (

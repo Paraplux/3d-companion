@@ -1,15 +1,23 @@
 import bambuLogo from "@/assets/ecosystems/bambu.svg";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { openInBambuStudio, toUserError } from "@/lib/libraryApi";
 import { canOpenInBambuStudio } from "@/lib/bambuStudio";
+import { returnActionLabel } from "@/lib/navigationReturn";
 import type { LibraryFile } from "@/types/library";
 
 type OpenInBambuStudioButtonProps = {
   file: LibraryFile;
 };
 
+type DetailLocationState = {
+  libraryReturnTo?: string;
+};
+
 export function OpenInBambuStudioButton({ file }: OpenInBambuStudioButtonProps) {
+  const location = useLocation();
+  const returnTo =
+    (location.state as DetailLocationState | null)?.libraryReturnTo ?? "/library";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,8 +64,8 @@ export function OpenInBambuStudioButton({ file }: OpenInBambuStudioButtonProps) 
         <div className="open-bambu__error" role="alert">
           <p>{error}</p>
           {missing ? (
-            <Link className="open-bambu__library-link" to="/library">
-              Back to Library
+            <Link className="open-bambu__library-link" to={returnTo}>
+              {returnActionLabel(returnTo)}
             </Link>
           ) : null}
         </div>

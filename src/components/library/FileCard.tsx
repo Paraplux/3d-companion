@@ -1,3 +1,4 @@
+import { memo, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { EcosystemIcon } from "@/components/library/EcosystemIcon";
@@ -69,7 +70,7 @@ function formatWeightLine(file: LibraryFile): string | null {
   return `${weight.toFixed(1)} g`;
 }
 
-export function FileCard({
+function FileCardComponent({
   file,
   showPath = false,
   showLocation = false,
@@ -79,12 +80,19 @@ export function FileCard({
 }: FileCardProps) {
   const location = useLocation();
   const { tagsForLibraryFile, hasNote } = useLibrary();
+  const [thumbFailed, setThumbFailed] = useState(false);
+
+  useEffect(() => {
+    setThumbFailed(false);
+  }, [file.thumbnailPath]);
+
   const pathLabel = showLocation
     ? [locationName, formatRelativePath(file.relativePath)].filter(Boolean).join(" / ")
     : formatRelativePath(file.relativePath);
 
   const displayName = displayNameFromFilename(file.name);
-  const thumbnailSrc = file.thumbnailPath ? convertFileSrc(file.thumbnailPath) : null;
+  const thumbnailSrc =
+    !thumbFailed && file.thumbnailPath ? convertFileSrc(file.thumbnailPath) : null;
   const format = getFileFormat(file);
   const ecosystem = getFileEcosystem(file);
   const printerNozzle = formatPrinterNozzleLine(file);
@@ -144,6 +152,8 @@ export function FileCard({
             src={thumbnailSrc}
             alt=""
             loading="lazy"
+            decoding="async"
+            onError={() => setThumbFailed(true)}
           />
         ) : (
           <FileTypeBadge extension={file.extension} />
@@ -221,3 +231,5 @@ function NoteIcon() {
     </svg>
   );
 }
+
+export const FileCard = memo(FileCardComponent);

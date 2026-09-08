@@ -5,9 +5,9 @@ import type { LibraryFile } from "@/types/library";
 
 type GeometryState =
   | { status: "idle" }
-  | { status: "loading" }
+  | { status: "loading"; data?: ModelGeometryResponse }
   | { status: "ready"; data: ModelGeometryResponse }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; data?: ModelGeometryResponse };
 
 export function useModelGeometry(file: LibraryFile | null, plateId: string | null) {
   const canLoad = useMemo(() => {
@@ -43,7 +43,18 @@ export function useModelGeometry(file: LibraryFile | null, plateId: string | nul
     }
 
     let cancelled = false;
-    setState({ status: "loading" });
+    // Keep previous plate/mesh visible while the next one loads (avoids Canvas remount).
+    setState((previous) => {
+      const previousData =
+        previous.status === "ready" || previous.status === "loading"
+          ? previous.data
+          : previous.status === "error"
+            ? previous.data
+            : undefined;
+      return previousData
+        ? { status: "loading", data: previousData }
+        : { status: "loading" };
+    });
 
     void getModelGeometry(file.libraryFileId, plateId, file.contentHash)
       .then((data) => {
@@ -53,10 +64,16 @@ export function useModelGeometry(file: LibraryFile | null, plateId: string | nul
       })
       .catch((error) => {
         if (!cancelled) {
-          setState({
+          setState((previous) => ({
             status: "error",
             message: toUserError(error, "3D preview unavailable"),
-          });
+            data:
+              previous.status === "ready" || previous.status === "loading"
+                ? previous.data
+                : previous.status === "error"
+                  ? previous.data
+                  : undefined,
+          }));
         }
       });
 

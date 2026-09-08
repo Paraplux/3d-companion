@@ -213,15 +213,37 @@ function geometryCacheKey(
   return `${libraryFileId}::${contentHash ?? ""}::${plateId ?? ""}`;
 }
 
+const GEOMETRY_CACHE_LIMIT = 24;
 const geometryResults = new Map<string, ModelGeometryResponse>();
 const geometryRequests = new Map<string, Promise<ModelGeometryResponse>>();
+
+function rememberGeometry(key: string, data: ModelGeometryResponse) {
+  if (geometryResults.has(key)) {
+    geometryResults.delete(key);
+  }
+  geometryResults.set(key, data);
+  while (geometryResults.size > GEOMETRY_CACHE_LIMIT) {
+    const oldest = geometryResults.keys().next().value;
+    if (oldest === undefined) {
+      break;
+    }
+    geometryResults.delete(oldest);
+  }
+}
 
 export function getCachedModelGeometry(
   libraryFileId: string,
   plateId?: string | null,
   contentHash?: string,
 ): ModelGeometryResponse | undefined {
-  return geometryResults.get(geometryCacheKey(libraryFileId, plateId, contentHash));
+  const key = geometryCacheKey(libraryFileId, plateId, contentHash);
+  const cached = geometryResults.get(key);
+  if (!cached) {
+    return undefined;
+  }
+  // Refresh LRU order.
+  rememberGeometry(key, cached);
+  return cached;
 }
 
 export function getModelGeometry(
@@ -232,6 +254,7 @@ export function getModelGeometry(
   const key = geometryCacheKey(libraryFileId, plateId, contentHash);
   const cached = geometryResults.get(key);
   if (cached) {
+    rememberGeometry(key, cached);
     return Promise.resolve(cached);
   }
 
@@ -244,7 +267,7 @@ export function getModelGeometry(
     libraryFileId,
     plateId: plateId ?? null,
   }).then((data) => {
-    geometryResults.set(key, data);
+    rememberGeometry(key, data);
     geometryRequests.delete(key);
     return data;
   }).catch((error) => {
@@ -254,6 +277,11 @@ export function getModelGeometry(
 
   geometryRequests.set(key, request);
   return request;
+}
+
+export function clearModelGeometryCache(): void {
+  geometryResults.clear();
+  geometryRequests.clear();
 }
 
 export function openInBambuStudio(libraryFileId: string): Promise<void> {

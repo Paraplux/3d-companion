@@ -13,6 +13,7 @@ export function useBackgroundTasks(): BackgroundTasksEvent {
 
   useEffect(() => {
     let cancelled = false;
+    let unlisten: (() => void) | undefined;
 
     void getBackgroundTasks()
       .then((snapshot) => {
@@ -24,10 +25,15 @@ export function useBackgroundTasks(): BackgroundTasksEvent {
         /* indicator is best-effort */
       });
 
-    let unlisten: (() => void) | undefined;
     void listen<BackgroundTasksEvent>("background://tasks", (event) => {
-      setState(event.payload);
+      if (!cancelled) {
+        setState(event.payload);
+      }
     }).then((fn) => {
+      if (cancelled) {
+        fn();
+        return;
+      }
       unlisten = fn;
     });
 

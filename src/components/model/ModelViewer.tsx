@@ -5,6 +5,7 @@ import type { OrbitControlsHandle } from "@/components/model/viewer/orbitControl
 import { ViewerScene } from "@/components/model/viewer/ViewerScene";
 import { useModelGeometry } from "@/hooks/useModelGeometry";
 import { useTheme } from "@/hooks/useTheme";
+import type { ModelGeometryResponse } from "@/types/geometry";
 import type { LibraryFile } from "@/types/library";
 
 type ModelViewerProps = {
@@ -22,6 +23,7 @@ export function ModelViewer({
   const isDark = resolved === "dark";
   const [fitToken, setFitToken] = useState(0);
   const controlsRef = useRef<OrbitControlsHandle | null>(null);
+  const lastReadyRef = useRef<ModelGeometryResponse | null>(null);
 
   const extension = file.extension.toLowerCase();
   const supported = extension === "stl" || extension === "3mf";
@@ -30,11 +32,25 @@ export function ModelViewer({
     extension === "3mf" ? selectedPlateId : null,
   );
 
+  if (state.status === "ready") {
+    lastReadyRef.current = state.data;
+  }
+
+  const sceneData =
+    state.status === "ready"
+      ? state.data
+      : state.status === "loading"
+        ? (state.data ?? lastReadyRef.current)
+        : lastReadyRef.current;
+
+  const showCanvas = Boolean(sceneData);
+  const plateKey = state.status === "ready" ? state.data.plateId : sceneData?.plateId;
+
   useEffect(() => {
     if (state.status === "ready") {
       setFitToken((value) => value + 1);
     }
-  }, [state.status, state.status === "ready" ? state.data.plateId : null]);
+  }, [state.status, plateKey]);
 
   useEffect(() => {
     if (cameraReset > 0) {
@@ -51,23 +67,32 @@ export function ModelViewer({
   }
 
   const background = isDark ? "#1c1c1e" : "#f3f4f6";
+  const showLoading =
+    state.status === "loading" || (state.status === "idle" && !sceneData);
+  const showError = state.status === "error" && !sceneData;
 
   return (
     <div className="model-viewer__canvas-wrap">
-      {state.status === "loading" || state.status === "idle" ? (
+      {showLoading ? (
         <div className="model-viewer__overlay">
           <p>Loading 3D preview…</p>
         </div>
       ) : null}
 
-      {state.status === "error" ? (
+      {showError ? (
         <div className="model-viewer__overlay">
           <p>3D preview unavailable</p>
           <p className="model-viewer__overlay-detail">{state.message}</p>
         </div>
       ) : null}
 
-      {state.status === "ready" ? (
+      {state.status === "error" && sceneData ? (
+        <div className="model-viewer__overlay model-viewer__overlay--toast" role="status">
+          <p>Could not load this plate</p>
+        </div>
+      ) : null}
+
+      {showCanvas && sceneData ? (
         <Canvas
           key={`${file.libraryFileId}-${resolved}`}
           className="model-viewer__canvas"
@@ -90,7 +115,7 @@ export function ModelViewer({
           />
           <Suspense fallback={null}>
             <ViewerScene
-              geometry={state.data}
+              geometry={sceneData}
               isDark={isDark}
               fitToken={fitToken}
               controlsRef={controlsRef}

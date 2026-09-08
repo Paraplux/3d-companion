@@ -474,7 +474,7 @@ pub fn files_needing_analysis(conn: &Connection) -> Result<Vec<(String, String, 
              FROM files f
              LEFT JOIN file_metadata m ON m.library_file_id = f.library_file_id
              WHERE m.library_file_id IS NULL
-                OR m.analysis_status IN ('pending', 'error')
+                OR m.analysis_status IN ('pending', 'error', 'analyzing')
                 OR m.analysis_version != ?1
                 OR (m.analysis_status = 'ready' AND m.content_hash != f.content_hash)
                 OR f.content_hash = ''",
