@@ -250,6 +250,7 @@ pub fn update_file_identity_and_path(
 }
 
 pub fn delete_by_paths(conn: &Connection, paths: &[String]) -> Result<(), String> {
+    crate::repositories::notes::delete_notes_for_paths(conn, paths)?;
     crate::repositories::metadata::delete_metadata_for_paths(conn, paths)?;
     for path in paths {
         conn.execute("DELETE FROM files WHERE path = ?1", params![path])
@@ -259,6 +260,7 @@ pub fn delete_by_paths(conn: &Connection, paths: &[String]) -> Result<(), String
 }
 
 pub fn delete_by_location_path(conn: &Connection, location_path: &str) -> Result<(), String> {
+    crate::repositories::notes::delete_notes_for_location(conn, location_path)?;
     crate::repositories::metadata::delete_metadata_for_location(conn, location_path)?;
     conn.execute(
         "DELETE FROM files WHERE location_path = ?1",

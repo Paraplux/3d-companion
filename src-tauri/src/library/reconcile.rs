@@ -45,7 +45,8 @@ pub fn reconcile_location(
             .collect();
 
         // Remove missing physical files from the index only.
-        // User data (projects, favorites, tags, notes) is intentionally kept.
+        // Projects / favorites / tags relations are intentionally kept (LibraryFileId).
+        // Notes are cleaned with the index entry (one note per file).
         delete_by_paths(conn, &stale_paths)?;
 
         let files = list_files_for_location(conn, location_path, thumbnails_dir)?;

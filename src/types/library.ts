@@ -160,7 +160,21 @@ export type BackgroundTasksEvent = {
 export type Project = {
   id: string;
   name: string;
+  description: string | null;
   createdAt: number;
+  updatedAt: number;
+  fileCount: number;
+  previewFileIds: string[];
+};
+
+export type FileProject = {
+  libraryFileId: string;
+  projectId: string;
+};
+
+export type FileNote = {
+  libraryFileId: string;
+  content: string;
   updatedAt: number;
 };
 

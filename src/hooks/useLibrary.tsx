@@ -13,19 +13,27 @@ import {
   addFavorite as addFavoriteApi,
   addFileTag as addFileTagApi,
   addFileToCollection as addFileToCollectionApi,
+  addFileToProject as addFileToProjectApi,
   addLibraryLocation,
   createCollection as createCollectionApi,
+  createProject as createProjectApi,
   createTag as createTagApi,
   deleteCollection as deleteCollectionApi,
+  deleteFileNote as deleteFileNoteApi,
+  deleteProject as deleteProjectApi,
   deleteTag as deleteTagApi,
   getAllFileCollections,
+  getAllFileNotes,
+  getAllFileProjects,
   getAllFileTags,
   getCollections,
   getFavoriteIds,
   getLibrarySnapshot,
+  getProjects,
   getTags,
   removeFavorite as removeFavoriteApi,
   removeFileFromCollection as removeFileFromCollectionApi,
+  removeFileFromProject as removeFileFromProjectApi,
   removeFileTag as removeFileTagApi,
   removeLibraryLocation,
   renameCollection as renameCollectionApi,
@@ -33,14 +41,20 @@ import {
   scanLibrary,
   searchLibraryFiles,
   toUserError,
+  updateProject as updateProjectApi,
+  upsertFileNote as upsertFileNoteApi,
 } from "@/lib/libraryApi";
 import { buildFileCollectionMap, collectionsForFile } from "@/lib/collections";
+import { buildFileNoteMap, hasFileNote } from "@/lib/notes";
+import { buildFileProjectMap, projectsForFile } from "@/lib/projects";
 import { buildFileTagMap, tagsForFile } from "@/lib/tags";
 import type {
   Collection,
+  FileNote,
   LibraryEvent,
   LibraryFile,
   LibraryLocation,
+  Project,
   Tag,
 } from "@/types/library";
 import type { LibraryFileId } from "@/types/libraryData";
@@ -53,6 +67,9 @@ type LibraryContextValue = {
   fileTagMap: Record<LibraryFileId, string[]>;
   collections: Collection[];
   fileCollectionMap: Record<LibraryFileId, string[]>;
+  projects: Project[];
+  fileProjectMap: Record<LibraryFileId, string[]>;
+  fileNoteMap: Record<LibraryFileId, FileNote>;
   ready: boolean;
   scanning: boolean;
   scanningLabel: string | null;
@@ -89,6 +106,33 @@ type LibraryContextValue = {
     libraryFileId: LibraryFileId,
     name: string,
   ) => Promise<Collection>;
+  projectsForLibraryFile: (libraryFileId: LibraryFileId) => Project[];
+  createProject: (name: string, description?: string | null) => Promise<Project>;
+  updateProject: (
+    projectId: string,
+    name: string,
+    description?: string | null,
+  ) => Promise<Project>;
+  deleteProject: (projectId: string) => Promise<void>;
+  addFileToProject: (
+    libraryFileId: LibraryFileId,
+    projectId: string,
+  ) => Promise<void>;
+  removeFileFromProject: (
+    libraryFileId: LibraryFileId,
+    projectId: string,
+  ) => Promise<void>;
+  addProjectNameToFile: (
+    libraryFileId: LibraryFileId,
+    name: string,
+  ) => Promise<Project>;
+  hasNote: (libraryFileId: LibraryFileId) => boolean;
+  noteForLibraryFile: (libraryFileId: LibraryFileId) => FileNote | null;
+  upsertFileNote: (
+    libraryFileId: LibraryFileId,
+    content: string,
+  ) => Promise<FileNote | null>;
+  deleteFileNote: (libraryFileId: LibraryFileId) => Promise<void>;
 };
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
@@ -118,6 +162,25 @@ async function loadCollectionState(): Promise<{
   };
 }
 
+async function loadProjectState(): Promise<{
+  projects: Project[];
+  fileProjectMap: Record<LibraryFileId, string[]>;
+}> {
+  const [projects, relations] = await Promise.all([
+    getProjects(),
+    getAllFileProjects(),
+  ]);
+  return {
+    projects,
+    fileProjectMap: buildFileProjectMap(relations),
+  };
+}
+
+async function loadNoteState(): Promise<Record<LibraryFileId, FileNote>> {
+  const notes = await getAllFileNotes();
+  return buildFileNoteMap(notes);
+}
+
 export function LibraryProvider({ children }: { children: ReactNode }) {
   const [locations, setLocations] = useState<LibraryLocation[]>([]);
   const [files, setFiles] = useState<LibraryFile[]>([]);
@@ -128,6 +191,13 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [fileCollectionMap, setFileCollectionMap] = useState<
     Record<LibraryFileId, string[]>
   >({});
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [fileProjectMap, setFileProjectMap] = useState<
+    Record<LibraryFileId, string[]>
+  >({});
+  const [fileNoteMap, setFileNoteMap] = useState<Record<LibraryFileId, FileNote>>(
+    {},
+  );
   const [ready, setReady] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanningLabel, setScanningLabel] = useState<string | null>(null);
@@ -147,17 +217,30 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     setFileCollectionMap(next.fileCollectionMap);
   }, []);
 
+  const refreshProjects = useCallback(async () => {
+    const next = await loadProjectState();
+    setProjects(next.projects);
+    setFileProjectMap(next.fileProjectMap);
+  }, []);
+
+  const refreshNotes = useCallback(async () => {
+    setFileNoteMap(await loadNoteState());
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
     async function bootstrap() {
       try {
-        const [snapshot, favorites, tagState, collectionState] = await Promise.all([
-          getLibrarySnapshot(),
-          getFavoriteIds(),
-          loadTagState(),
-          loadCollectionState(),
-        ]);
+        const [snapshot, favorites, tagState, collectionState, projectState, notes] =
+          await Promise.all([
+            getLibrarySnapshot(),
+            getFavoriteIds(),
+            loadTagState(),
+            loadCollectionState(),
+            loadProjectState(),
+            loadNoteState(),
+          ]);
         if (cancelled) {
           return;
         }
@@ -168,6 +251,9 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setFileTagMap(tagState.fileTagMap);
         setCollections(collectionState.collections);
         setFileCollectionMap(collectionState.fileCollectionMap);
+        setProjects(projectState.projects);
+        setFileProjectMap(projectState.fileProjectMap);
+        setFileNoteMap(notes);
         setError(null);
         if (snapshot.reconciling) {
           setScanning(true);
@@ -212,6 +298,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setFiles((current) =>
           current.filter((file) => file.locationPath !== payload.locationPath),
         );
+        void refreshNotes();
         return;
       }
 
@@ -219,6 +306,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setFiles(payload.files);
         setScanning(false);
         setScanningLabel(null);
+        void refreshNotes();
         return;
       }
 
@@ -242,7 +330,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     return () => {
       unlisten?.();
     };
-  }, []);
+  }, [refreshNotes]);
 
   const addFolder = useCallback(async () => {
     clearError();
@@ -604,6 +692,168 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [addFileToCollection, createCollection],
   );
 
+  const projectsForLibraryFile = useCallback(
+    (libraryFileId: LibraryFileId) =>
+      projectsForFile(projects, fileProjectMap, libraryFileId),
+    [fileProjectMap, projects],
+  );
+
+  const createProject = useCallback(
+    async (name: string, description?: string | null) => {
+      clearError();
+      try {
+        const project = await createProjectApi(name, description);
+        await refreshProjects();
+        return project;
+      } catch (err) {
+        setError(toUserError(err, "Could not create that project."));
+        throw err;
+      }
+    },
+    [clearError, refreshProjects],
+  );
+
+  const updateProject = useCallback(
+    async (projectId: string, name: string, description?: string | null) => {
+      clearError();
+      try {
+        const project = await updateProjectApi(projectId, name, description);
+        await refreshProjects();
+        return project;
+      } catch (err) {
+        setError(toUserError(err, "Could not update that project."));
+        throw err;
+      }
+    },
+    [clearError, refreshProjects],
+  );
+
+  const deleteProject = useCallback(
+    async (projectId: string) => {
+      clearError();
+      try {
+        await deleteProjectApi(projectId);
+        await refreshProjects();
+      } catch (err) {
+        setError(toUserError(err, "Could not delete that project."));
+        throw err;
+      }
+    },
+    [clearError, refreshProjects],
+  );
+
+  const addFileToProject = useCallback(
+    async (libraryFileId: LibraryFileId, projectId: string) => {
+      clearError();
+      setFileProjectMap((current) => {
+        const existing = current[libraryFileId] ?? [];
+        if (existing.includes(projectId)) {
+          return current;
+        }
+        return { ...current, [libraryFileId]: [...existing, projectId] };
+      });
+
+      try {
+        await addFileToProjectApi(libraryFileId, projectId);
+        await refreshProjects();
+      } catch (err) {
+        await refreshProjects();
+        setError(toUserError(err, "Could not add that model to the project."));
+        throw err;
+      }
+    },
+    [clearError, refreshProjects],
+  );
+
+  const removeFileFromProject = useCallback(
+    async (libraryFileId: LibraryFileId, projectId: string) => {
+      clearError();
+      setFileProjectMap((current) => {
+        const existing = current[libraryFileId];
+        if (!existing) {
+          return current;
+        }
+        return {
+          ...current,
+          [libraryFileId]: existing.filter((id) => id !== projectId),
+        };
+      });
+
+      try {
+        await removeFileFromProjectApi(libraryFileId, projectId);
+        await refreshProjects();
+      } catch (err) {
+        await refreshProjects();
+        setError(toUserError(err, "Could not remove that model from the project."));
+        throw err;
+      }
+    },
+    [clearError, refreshProjects],
+  );
+
+  const addProjectNameToFile = useCallback(
+    async (libraryFileId: LibraryFileId, name: string) => {
+      const project = await createProject(name);
+      await addFileToProject(libraryFileId, project.id);
+      return project;
+    },
+    [addFileToProject, createProject],
+  );
+
+  const hasNote = useCallback(
+    (libraryFileId: LibraryFileId) => hasFileNote(fileNoteMap, libraryFileId),
+    [fileNoteMap],
+  );
+
+  const noteForLibraryFile = useCallback(
+    (libraryFileId: LibraryFileId) => fileNoteMap[libraryFileId] ?? null,
+    [fileNoteMap],
+  );
+
+  const upsertFileNote = useCallback(
+    async (libraryFileId: LibraryFileId, content: string) => {
+      clearError();
+      try {
+        const note = await upsertFileNoteApi(libraryFileId, content);
+        setFileNoteMap((current) => {
+          const next = { ...current };
+          if (note) {
+            next[libraryFileId] = note;
+          } else {
+            delete next[libraryFileId];
+          }
+          return next;
+        });
+        return note;
+      } catch (err) {
+        setError(toUserError(err, "Could not save that note."));
+        throw err;
+      }
+    },
+    [clearError],
+  );
+
+  const deleteFileNote = useCallback(
+    async (libraryFileId: LibraryFileId) => {
+      clearError();
+      try {
+        await deleteFileNoteApi(libraryFileId);
+        setFileNoteMap((current) => {
+          if (!current[libraryFileId]) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[libraryFileId];
+          return next;
+        });
+      } catch (err) {
+        setError(toUserError(err, "Could not delete that note."));
+        throw err;
+      }
+    },
+    [clearError],
+  );
+
   const value = useMemo(
     () => ({
       locations,
@@ -613,6 +863,9 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       fileTagMap,
       collections,
       fileCollectionMap,
+      projects,
+      fileProjectMap,
+      fileNoteMap,
       ready,
       scanning,
       scanningLabel,
@@ -640,6 +893,17 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       addFileToCollection,
       removeFileFromCollection,
       addCollectionNameToFile,
+      projectsForLibraryFile,
+      createProject,
+      updateProject,
+      deleteProject,
+      addFileToProject,
+      removeFileFromProject,
+      addProjectNameToFile,
+      hasNote,
+      noteForLibraryFile,
+      upsertFileNote,
+      deleteFileNote,
     }),
     [
       locations,
@@ -649,6 +913,9 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       fileTagMap,
       collections,
       fileCollectionMap,
+      projects,
+      fileProjectMap,
+      fileNoteMap,
       ready,
       scanning,
       scanningLabel,
@@ -676,6 +943,17 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       addFileToCollection,
       removeFileFromCollection,
       addCollectionNameToFile,
+      projectsForLibraryFile,
+      createProject,
+      updateProject,
+      deleteProject,
+      addFileToProject,
+      removeFileFromProject,
+      addProjectNameToFile,
+      hasNote,
+      noteForLibraryFile,
+      upsertFileNote,
+      deleteFileNote,
     ],
   );
 

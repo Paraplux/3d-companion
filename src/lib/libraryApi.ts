@@ -5,6 +5,8 @@ import type {
   BackgroundTasksEvent,
   Collection,
   FileCollection,
+  FileNote,
+  FileProject,
   FileTag,
   LibraryFile,
   LibraryLocation,
@@ -47,6 +49,54 @@ export function searchLibraryFiles(query: string): Promise<LibraryFile[]> {
 
 export function getProjects(): Promise<Project[]> {
   return invoke("get_projects");
+}
+
+export function getProject(projectId: string): Promise<Project | null> {
+  return invoke("get_project", { projectId });
+}
+
+export function createProject(
+  name: string,
+  description?: string | null,
+): Promise<Project> {
+  return invoke("create_project", {
+    name,
+    description: description?.trim() ? description.trim() : null,
+  });
+}
+
+export function updateProject(
+  projectId: string,
+  name: string,
+  description?: string | null,
+): Promise<Project> {
+  return invoke("update_project", {
+    projectId,
+    name,
+    description: description?.trim() ? description.trim() : null,
+  });
+}
+
+export function deleteProject(projectId: string): Promise<void> {
+  return invoke("delete_project", { projectId });
+}
+
+export function addFileToProject(
+  libraryFileId: string,
+  projectId: string,
+): Promise<void> {
+  return invoke("add_file_to_project", { libraryFileId, projectId });
+}
+
+export function removeFileFromProject(
+  libraryFileId: string,
+  projectId: string,
+): Promise<void> {
+  return invoke("remove_file_from_project", { libraryFileId, projectId });
+}
+
+export function getAllFileProjects(): Promise<FileProject[]> {
+  return invoke("get_all_file_projects");
 }
 
 export function getCollections(): Promise<Collection[]> {
@@ -125,6 +175,29 @@ export function addFavorite(libraryFileId: string): Promise<void> {
 
 export function removeFavorite(libraryFileId: string): Promise<void> {
   return invoke("remove_favorite", { libraryFileId });
+}
+
+export function getFileNote(libraryFileId: string): Promise<FileNote | null> {
+  return invoke("get_file_note", { libraryFileId });
+}
+
+export function upsertFileNote(
+  libraryFileId: string,
+  content: string,
+): Promise<FileNote | null> {
+  return invoke("upsert_file_note", { libraryFileId, content });
+}
+
+export function deleteFileNote(libraryFileId: string): Promise<void> {
+  return invoke("delete_file_note", { libraryFileId });
+}
+
+export function getNotedFileIds(): Promise<string[]> {
+  return invoke("get_noted_file_ids");
+}
+
+export function getAllFileNotes(): Promise<FileNote[]> {
+  return invoke("get_all_file_notes");
 }
 
 export function getBackgroundTasks(): Promise<BackgroundTasksEvent> {

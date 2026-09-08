@@ -13,6 +13,11 @@ const ProjectsPage = lazy(async () => {
   return { default: module.ProjectsPage };
 });
 
+const ProjectDetailPage = lazy(async () => {
+  const module = await import("@/pages/ProjectDetailPage");
+  return { default: module.ProjectDetailPage };
+});
+
 const CollectionsPage = lazy(async () => {
   const module = await import("@/pages/CollectionsPage");
   return { default: module.CollectionsPage };
@@ -50,6 +55,7 @@ export default function App() {
           <Route path="library" element={<LibraryPage />} />
           <Route path="library/file/:fileId" element={<ModelDetailPage />} />
           <Route path="projects" element={<ProjectsPage />} />
+          <Route path="projects/:projectId" element={<ProjectDetailPage />} />
           <Route path="collections" element={<CollectionsPage />} />
           <Route path="collections/:collectionId" element={<CollectionDetailPage />} />
           <Route path="favorites" element={<FavoritesPage />} />

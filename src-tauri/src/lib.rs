@@ -4,14 +4,18 @@ mod repositories;
 
 use database::Database;
 use library::{
-    add_favorite, add_file_tag, add_file_to_collection, add_library_location, create_collection,
-    create_tag, delete_collection, delete_tag, get_all_file_collections, get_all_file_tags,
-    get_background_tasks, get_collection, get_collection_file_count, get_collection_file_ids,
-    get_collections, get_favorite_ids, get_file_collection_ids, get_file_tag_ids, get_library_files,
-    get_library_locations, get_library_snapshot, get_model_geometry, get_projects, get_tag_file_ids,
-    get_tags, is_favorite, open_in_bambu_studio, remove_favorite, remove_file_from_collection,
-    remove_file_tag, remove_library_location, rename_collection, rename_tag, scan_library,
-    scan_library_location, search_library_files, LibraryState,
+    add_favorite, add_file_tag, add_file_to_collection, add_file_to_project, add_library_location,
+    create_collection, create_project, create_tag, delete_collection, delete_file_note,
+    delete_project, delete_tag, get_all_file_collections, get_all_file_notes, get_all_file_projects,
+    get_all_file_tags, get_background_tasks, get_collection, get_collection_file_count,
+    get_collection_file_ids, get_collections, get_favorite_ids, get_file_collection_ids,
+    get_file_note, get_file_project_ids, get_file_tag_ids, get_library_files, get_library_locations,
+    get_library_snapshot, get_model_geometry, get_noted_file_ids, get_project,
+    get_project_file_count, get_project_file_ids, get_projects, get_tag_file_ids, get_tags,
+    is_favorite, open_in_bambu_studio, remove_favorite, remove_file_from_collection,
+    remove_file_from_project, remove_file_tag, remove_library_location, rename_collection,
+    rename_tag, scan_library, scan_library_location, search_library_files, update_project,
+    upsert_file_note, LibraryState,
 };
 use tauri::Manager;
 
@@ -38,6 +42,16 @@ pub fn run() {
             search_library_files,
             get_background_tasks,
             get_projects,
+            get_project,
+            create_project,
+            update_project,
+            delete_project,
+            add_file_to_project,
+            remove_file_from_project,
+            get_file_project_ids,
+            get_project_file_ids,
+            get_project_file_count,
+            get_all_file_projects,
             get_collections,
             get_collection,
             create_collection,
@@ -64,6 +78,11 @@ pub fn run() {
             add_favorite,
             remove_favorite,
             is_favorite,
+            get_file_note,
+            upsert_file_note,
+            delete_file_note,
+            get_noted_file_ids,
+            get_all_file_notes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

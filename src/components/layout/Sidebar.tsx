@@ -20,7 +20,7 @@ export function Sidebar() {
           <NavLink
             key={to}
             to={to}
-            end={to !== "/library" && to !== "/collections"}
+            end={to !== "/library" && to !== "/collections" && to !== "/projects"}
             className={({ isActive }) =>
               isActive ? "sidebar__link is-active" : "sidebar__link"
             }

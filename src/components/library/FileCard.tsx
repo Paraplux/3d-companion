@@ -23,6 +23,7 @@ type FileCardProps = {
   showLocation?: boolean;
   locationName?: string;
   onRemoveFromCollection?: () => void;
+  onRemoveFromProject?: () => void;
 };
 
 function formatDimensions(file: LibraryFile): string | null {
@@ -74,8 +75,9 @@ export function FileCard({
   showLocation = false,
   locationName,
   onRemoveFromCollection,
+  onRemoveFromProject,
 }: FileCardProps) {
-  const { tagsForLibraryFile } = useLibrary();
+  const { tagsForLibraryFile, hasNote } = useLibrary();
   const pathLabel = showLocation
     ? [locationName, formatRelativePath(file.relativePath)].filter(Boolean).join(" / ")
     : formatRelativePath(file.relativePath);
@@ -100,6 +102,11 @@ export function FileCard({
     tagsForLibraryFile(file.libraryFileId),
     2,
   );
+  const onRemove = onRemoveFromProject ?? onRemoveFromCollection;
+  const removeLabel = onRemoveFromProject
+    ? "Remove from project"
+    : "Remove from collection";
+  const showNoteIndicator = hasNote(file.libraryFileId);
 
   return (
     <Link
@@ -109,16 +116,21 @@ export function FileCard({
     >
       <div className="file-card__preview">
         <FavoriteButton libraryFileId={file.libraryFileId} />
-        {onRemoveFromCollection ? (
+        {showNoteIndicator ? (
+          <span className="file-card__note-indicator" title="Note" aria-label="Has note">
+            <NoteIcon />
+          </span>
+        ) : null}
+        {onRemove ? (
           <button
             type="button"
             className="file-card__collection-remove"
-            aria-label="Remove from collection"
-            title="Remove from collection"
+            aria-label={removeLabel}
+            title={removeLabel}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              onRemoveFromCollection();
+              onRemove();
             }}
           >
             ×
@@ -186,5 +198,24 @@ export function FileCard({
         {showPath ? <p className="file-card__path">{pathLabel}</p> : null}
       </div>
     </Link>
+  );
+}
+
+function NoteIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M3.5 2.5h9v11l-2.2-1.6H3.5v-9.4Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5.5 5.5h6M5.5 8h6M5.5 10.5h3.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }

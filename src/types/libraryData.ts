@@ -41,6 +41,7 @@ export type TagId = string;
 export type Project = {
   id: ProjectId;
   name: string;
+  description?: string;
 };
 
 export type Collection = {
