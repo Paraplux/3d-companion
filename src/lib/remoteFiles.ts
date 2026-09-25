@@ -10,6 +10,10 @@ export const REMOTE_LOCATION = {
   name: "Cloud",
 } as const;
 
+export function isRemoteLibraryFile(file: Pick<LibraryFile, "locationPath">): boolean {
+  return file.locationPath === REMOTE_LOCATION_PATH;
+}
+
 export function remoteFileToLibraryFile(file: RemoteFileSummary): LibraryFile {
   const extension = file.extension.replace(/^\./, "").toLowerCase();
   const updated = Date.parse(file.updatedAt);
@@ -23,7 +27,9 @@ export function remoteFileToLibraryFile(file: RemoteFileSummary): LibraryFile {
     modifiedAt: Number.isFinite(updated) ? updated : Date.now(),
     relativePath: file.name,
     locationPath: REMOTE_LOCATION_PATH,
-    analysisStatus: "pending",
+    // No local analysis pipeline for cloud rows yet — don't show a forever "Analyzing…".
+    analysisStatus: "ready",
+    hasRemoteThumbnail: Boolean(file.hasThumbnail),
   };
 }
 

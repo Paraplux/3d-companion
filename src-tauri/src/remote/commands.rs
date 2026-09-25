@@ -1,9 +1,9 @@
 use serde_json::Value;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use super::client::{
-    get_library, list_files, put_library, test_connection, upload_file, RemoteConnectionTestResult,
-    RemoteFileSummary, RemoteIngestResult, RemoteLibraryResponse,
+    download_thumbnail, get_library, list_files, put_library, test_connection, upload_file,
+    RemoteConnectionTestResult, RemoteFileSummary, RemoteIngestResult, RemoteLibraryResponse,
 };
 use super::config::{load_config, save_config, RemoteConfig};
 
@@ -64,4 +64,16 @@ pub async fn put_remote_library(
 pub async fn upload_remote_file(app: AppHandle, path: String) -> Result<RemoteIngestResult, String> {
     let config = load_config(&app)?;
     upload_file(&config, std::path::Path::new(&path)).await
+}
+
+#[tauri::command]
+pub async fn get_remote_thumbnail(app: AppHandle, file_id: String) -> Result<String, String> {
+    let config = load_config(&app)?;
+    let cache_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve app data dir: {error}"))?
+        .join("remote-thumbnails");
+    let path = download_thumbnail(&config, &file_id, &cache_dir).await?;
+    Ok(path.to_string_lossy().into_owned())
 }

@@ -18,6 +18,9 @@ pub struct RemoteFileSummary {
     pub created_at: String,
     #[serde(alias = "updated_at")]
     pub updated_at: String,
+    /// Present once the gateway ships thumbnail support; default false for older APIs.
+    #[serde(default, alias = "has_thumbnail")]
+    pub has_thumbnail: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -319,6 +322,87 @@ pub async fn upload_file(
         .json::<RemoteIngestResult>()
         .await
         .map_err(|error| format!("Could not parse upload response: {error}"))
+}
+
+/// Download a remote thumbnail into `cache_dir`, returning the local file path.
+/// Idempotent when the cached file already exists.
+pub async fn download_thumbnail(
+    config: &RemoteConfig,
+    file_id: &str,
+    cache_dir: &Path,
+) -> Result<std::path::PathBuf, String> {
+    ensure_ready(config)?;
+    validate_file_id(file_id)?;
+
+    std::fs::create_dir_all(cache_dir)
+        .map_err(|error| format!("Could not create thumbnail cache: {error}"))?;
+
+    // Prefer existing webp/png cache hit.
+    for ext in ["webp", "png", "jpg", "jpeg"] {
+        let candidate = cache_dir.join(format!("{file_id}.{ext}"));
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+
+    let client = http_client()?;
+    let response = client
+        .get(config.v1_url(&format!("files/{file_id}/thumbnail"))?)
+        .headers(auth_headers(&config.api_key)?)
+        .send()
+        .await
+        .map_err(|error| format!("Could not download thumbnail: {error}"))?;
+
+    let status = response.status();
+    if status.as_u16() == 404 {
+        return Err("No thumbnail available for this file.".into());
+    }
+    if !status.is_success() {
+        return Err(format!(
+            "Thumbnail download failed (HTTP {}).",
+            status.as_u16()
+        ));
+    }
+
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("image/webp")
+        .to_ascii_lowercase();
+
+    let ext = if content_type.contains("png") {
+        "png"
+    } else if content_type.contains("jpeg") || content_type.contains("jpg") {
+        "jpg"
+    } else {
+        "webp"
+    };
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| format!("Could not read thumbnail bytes: {error}"))?;
+
+    if bytes.is_empty() {
+        return Err("Thumbnail response was empty.".into());
+    }
+
+    let path = cache_dir.join(format!("{file_id}.{ext}"));
+    tokio::fs::write(&path, &bytes)
+        .await
+        .map_err(|error| format!("Could not save thumbnail: {error}"))?;
+
+    Ok(path)
+}
+
+fn validate_file_id(file_id: &str) -> Result<(), String> {
+    let ok = uuid::Uuid::parse_str(file_id).is_ok();
+    if ok {
+        Ok(())
+    } else {
+        Err("Invalid file id.".into())
+    }
 }
 
 fn ensure_ready(config: &RemoteConfig) -> Result<(), String> {

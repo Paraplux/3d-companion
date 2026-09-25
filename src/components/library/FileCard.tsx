@@ -8,6 +8,7 @@ import { FileFormatBadge } from "@/components/library/FileFormatBadge";
 import { FileTypeBadge } from "@/components/library/FileTypeBadge";
 import { TagPill } from "@/components/library/TagPill";
 import { useLibrary } from "@/hooks/useLibrary";
+import { useRemoteThumbnailSrc } from "@/hooks/useRemoteThumbnailSrc";
 import { getFileEcosystem, getFileFormat } from "@/lib/filePresentation";
 import { resolveFilaments } from "@/lib/filaments";
 import {
@@ -15,6 +16,7 @@ import {
   formatBytes,
   formatRelativePath,
 } from "@/lib/format";
+import { isRemoteLibraryFile } from "@/lib/remoteFiles";
 import { visibleTagsForCard } from "@/lib/tags";
 import type { LibraryFile } from "@/types/library";
 
@@ -81,18 +83,25 @@ function FileCardComponent({
   const location = useLocation();
   const { tagsForLibraryFile, hasNote } = useLibrary();
   const [thumbFailed, setThumbFailed] = useState(false);
+  const isRemote = isRemoteLibraryFile(file);
+  const remoteThumbSrc = useRemoteThumbnailSrc(
+    file.libraryFileId,
+    Boolean(isRemote && file.hasRemoteThumbnail),
+  );
 
   useEffect(() => {
     setThumbFailed(false);
-  }, [file.thumbnailPath]);
+  }, [file.thumbnailPath, remoteThumbSrc]);
 
   const pathLabel = showLocation
     ? [locationName, formatRelativePath(file.relativePath)].filter(Boolean).join(" / ")
     : formatRelativePath(file.relativePath);
 
   const displayName = displayNameFromFilename(file.name);
-  const thumbnailSrc =
+  const localThumbSrc =
     !thumbFailed && file.thumbnailPath ? convertFileSrc(file.thumbnailPath) : null;
+  const thumbnailSrc =
+    !thumbFailed && (remoteThumbSrc || localThumbSrc) ? remoteThumbSrc ?? localThumbSrc : null;
   const format = getFileFormat(file);
   const ecosystem = getFileEcosystem(file);
   const printerNozzle = formatPrinterNozzleLine(file);
@@ -106,7 +115,8 @@ function FileCardComponent({
     Boolean(layerHeight) ||
     Boolean(weight);
   const analyzing =
-    file.analysisStatus === "pending" || file.analysisStatus === "analyzing";
+    !isRemote &&
+    (file.analysisStatus === "pending" || file.analysisStatus === "analyzing");
   const { visible: cardTags, overflow: tagOverflow } = visibleTagsForCard(
     tagsForLibraryFile(file.libraryFileId),
     2,

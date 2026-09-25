@@ -102,6 +102,11 @@ export type LibraryFile = {
   analysisStatus: AnalysisStatus;
   analysisError?: string;
   thumbnailPath?: string;
+  /**
+   * Cloud catalog only: server advertises a thumbnail via
+   * `GET /v1/files/{id}/thumbnail`. Local files leave this undefined.
+   */
+  hasRemoteThumbnail?: boolean;
   stl?: StlMetadata;
   threemf?: ThreeMfMetadata;
 };

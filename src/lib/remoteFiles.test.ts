@@ -20,7 +20,23 @@ describe("remoteFileToLibraryFile", () => {
     expect(file.name).toBe("robot.3mf");
     expect(file.extension).toBe("3mf");
     expect(file.locationPath).toBe(REMOTE_LOCATION_PATH);
-    expect(file.analysisStatus).toBe("pending");
+    expect(file.analysisStatus).toBe("ready");
+    expect(file.hasRemoteThumbnail).toBe(false);
     expect(file.modifiedAt).toBe(Date.parse("2026-01-02T00:00:00Z"));
+  });
+
+  it("marks hasRemoteThumbnail when the catalog advertises a thumb", () => {
+    const file = remoteFileToLibraryFile({
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "robot.3mf",
+      extension: "3mf",
+      size: 42,
+      contentHash: "abc",
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-02T00:00:00Z",
+      hasThumbnail: true,
+    });
+    expect(file.hasRemoteThumbnail).toBe(true);
+    expect(file.analysisStatus).toBe("ready");
   });
 });

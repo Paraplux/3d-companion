@@ -1,5 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { FileTypeBadge } from "@/components/library/FileTypeBadge";
+import { useRemoteThumbnailSrc } from "@/hooks/useRemoteThumbnailSrc";
+import { isRemoteLibraryFile } from "@/lib/remoteFiles";
 import type { LibraryFile } from "@/types/library";
 
 type ModelViewerPlaceholderProps = {
@@ -7,7 +9,7 @@ type ModelViewerPlaceholderProps = {
   plateId?: string | null;
 };
 
-function resolvePreviewSrc(file: LibraryFile, plateId?: string | null): string | null {
+function resolveLocalPreviewSrc(file: LibraryFile, plateId?: string | null): string | null {
   const plates = file.threemf?.project?.plates ?? [];
   const plate = plateId
     ? plates.find((entry) => entry.id === plateId)
@@ -26,7 +28,12 @@ export function ModelViewerPlaceholder({
   file,
   plateId,
 }: ModelViewerPlaceholderProps) {
-  const previewSrc = resolvePreviewSrc(file, plateId);
+  const isRemote = isRemoteLibraryFile(file);
+  const remoteSrc = useRemoteThumbnailSrc(
+    file.libraryFileId,
+    Boolean(isRemote && file.hasRemoteThumbnail),
+  );
+  const previewSrc = remoteSrc ?? resolveLocalPreviewSrc(file, plateId);
 
   return (
     <div className="model-viewer-placeholder" aria-label="Model preview">

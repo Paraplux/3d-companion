@@ -19,8 +19,8 @@ use library::{
     upsert_file_note, LibraryState,
 };
 use remote::{
-    get_remote_config, get_remote_files, get_remote_library, put_remote_library, save_remote_config,
-    test_remote_connection, upload_remote_file,
+    get_remote_config, get_remote_files, get_remote_library, get_remote_thumbnail,
+    put_remote_library, save_remote_config, test_remote_connection, upload_remote_file,
 };
 use tauri::Manager;
 
@@ -95,6 +95,7 @@ pub fn run() {
             get_remote_library,
             put_remote_library,
             upload_remote_file,
+            get_remote_thumbnail,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

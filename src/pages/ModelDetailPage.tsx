@@ -24,6 +24,7 @@ import { ModelCollections } from "@/components/model/ModelCollections";
 import { ModelNotes } from "@/components/model/ModelNotes";
 import { ModelProjects } from "@/components/model/ModelProjects";
 import { ModelTags } from "@/components/model/ModelTags";
+import { isRemoteLibraryFile } from "@/lib/remoteFiles";
 
 type DetailLocationState = {
   libraryReturnTo?: string;
@@ -124,8 +125,10 @@ export function ModelDetailPage() {
   const displayName = displayNameFromFilename(file.name);
   const format = getFileFormat(file);
   const ecosystem = getFileEcosystem(file);
+  const isRemote = isRemoteLibraryFile(file);
   const analyzing =
-    file.analysisStatus === "pending" || file.analysisStatus === "analyzing";
+    !isRemote &&
+    (file.analysisStatus === "pending" || file.analysisStatus === "analyzing");
 
   return (
     <section className="page page--model-detail">
@@ -146,7 +149,12 @@ export function ModelDetailPage() {
             Analyzing model… metadata and preview will update when ready.
           </p>
         ) : null}
-        {file.analysisStatus === "error" ? (
+        {isRemote ? (
+          <p className="model-detail__status" role="status">
+            Stored in the cloud. 3D viewer needs a local cache download (coming soon).
+          </p>
+        ) : null}
+        {file.analysisStatus === "error" && !isRemote ? (
           <p className="model-detail__status model-detail__status--error" role="status">
             Analysis failed
             {file.analysisError ? `: ${file.analysisError}` : "."} You can still

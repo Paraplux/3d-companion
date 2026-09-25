@@ -30,6 +30,8 @@ export type RemoteFileSummary = {
   contentHash: string;
   createdAt: string;
   updatedAt: string;
+  /** Optional until the gateway ships thumbnail support. */
+  hasThumbnail?: boolean;
 };
 
 export type RemoteLibraryResponse = {

@@ -4,6 +4,7 @@ import { OpenInBambuStudioButton } from "@/components/model/OpenInBambuStudioBut
 import { PlateSelector } from "@/components/model/viewer/PlateSelector";
 import { canOpenInBambuStudio } from "@/lib/bambuStudio";
 import { getModelGeometry } from "@/lib/libraryApi";
+import { isRemoteLibraryFile } from "@/lib/remoteFiles";
 import type { LibraryFile } from "@/types/library";
 
 const ModelViewer = lazy(async () => {
@@ -31,8 +32,9 @@ function firstPlateId(file: LibraryFile): string | null {
 export function ModelPreview({ file }: ModelPreviewProps) {
   const plates = file.threemf?.project?.plates ?? [];
   const initialPlateId = useMemo(() => firstPlateId(file), [file]);
-  const previewable = canPreview3d(file.extension);
-  const canOpenBambu = canOpenInBambuStudio(file);
+  const isRemote = isRemoteLibraryFile(file);
+  const previewable = canPreview3d(file.extension) && !isRemote;
+  const canOpenBambu = canOpenInBambuStudio(file) && !isRemote;
 
   const [selectedPlateId, setSelectedPlateId] = useState<string | null>(initialPlateId);
   const [viewerActive, setViewerActive] = useState(false);
@@ -89,7 +91,8 @@ export function ModelPreview({ file }: ModelPreviewProps) {
 
   const showToolbar = plates.length > 1 || previewable || canOpenBambu;
   const analyzing =
-    file.analysisStatus === "pending" || file.analysisStatus === "analyzing";
+    !isRemote &&
+    (file.analysisStatus === "pending" || file.analysisStatus === "analyzing");
 
   return (
     <div className="model-viewer">
@@ -120,7 +123,7 @@ export function ModelPreview({ file }: ModelPreviewProps) {
         </p>
       ) : null}
 
-      {file.analysisStatus === "error" && !viewerActive ? (
+      {file.analysisStatus === "error" && !viewerActive && !isRemote ? (
         <p className="model-viewer__analysis-hint model-viewer__analysis-hint--error" role="status">
           Analysis failed. You can still open the file or try Rescan from Library.
         </p>
