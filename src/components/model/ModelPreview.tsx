@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { DownloadRemoteFileButton } from "@/components/model/DownloadRemoteFileButton";
 import { ModelViewerPlaceholder } from "@/components/model/ModelViewerPlaceholder";
 import { OpenInBambuStudioButton } from "@/components/model/OpenInBambuStudioButton";
 import { PlateSelector } from "@/components/model/viewer/PlateSelector";
@@ -34,7 +35,7 @@ export function ModelPreview({ file }: ModelPreviewProps) {
   const initialPlateId = useMemo(() => firstPlateId(file), [file]);
   const isRemote = isRemoteLibraryFile(file);
   const previewable = canPreview3d(file.extension) && !isRemote;
-  const canOpenBambu = canOpenInBambuStudio(file) && !isRemote;
+  const canOpenBambu = canOpenInBambuStudio(file);
 
   const [selectedPlateId, setSelectedPlateId] = useState<string | null>(initialPlateId);
   const [viewerActive, setViewerActive] = useState(false);
@@ -89,7 +90,8 @@ export function ModelPreview({ file }: ModelPreviewProps) {
     viewerActive,
   ]);
 
-  const showToolbar = plates.length > 1 || previewable || canOpenBambu;
+  const showToolbar =
+    plates.length > 1 || previewable || canOpenBambu || isRemote;
   const analyzing =
     !isRemote &&
     (file.analysisStatus === "pending" || file.analysisStatus === "analyzing");
@@ -150,6 +152,7 @@ export function ModelPreview({ file }: ModelPreviewProps) {
               </button>
             ) : null}
 
+            {isRemote ? <DownloadRemoteFileButton file={file} /> : null}
             {canOpenBambu ? <OpenInBambuStudioButton file={file} /> : null}
 
             {previewable ? (

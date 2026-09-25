@@ -4,6 +4,8 @@ import { Link, useLocation } from "react-router-dom";
 import { openInBambuStudio, toUserError } from "@/lib/libraryApi";
 import { canOpenInBambuStudio } from "@/lib/bambuStudio";
 import { returnActionLabel } from "@/lib/navigationReturn";
+import { openRemoteInBambuStudio } from "@/lib/remoteApi";
+import { isRemoteLibraryFile } from "@/lib/remoteFiles";
 import type { LibraryFile } from "@/types/library";
 
 type OpenInBambuStudioButtonProps = {
@@ -19,7 +21,9 @@ export function OpenInBambuStudioButton({ file }: OpenInBambuStudioButtonProps) 
   const returnTo =
     (location.state as DetailLocationState | null)?.libraryReturnTo ?? "/library";
   const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "downloading" | "opening">("idle");
   const [error, setError] = useState<string | null>(null);
+  const isRemote = isRemoteLibraryFile(file);
 
   if (!canOpenInBambuStudio(file)) {
     return null;
@@ -32,15 +36,33 @@ export function OpenInBambuStudioButton({ file }: OpenInBambuStudioButtonProps) 
     setBusy(true);
     setError(null);
     try {
-      await openInBambuStudio(file.libraryFileId);
+      if (isRemote) {
+        setPhase("downloading");
+        await openRemoteInBambuStudio(
+          file.libraryFileId,
+          file.contentHash,
+          file.name,
+          file.extension,
+        );
+      } else {
+        setPhase("opening");
+        await openInBambuStudio(file.libraryFileId);
+      }
     } catch (err) {
       setError(toUserError(err, "Could not open in Bambu Studio."));
     } finally {
       setBusy(false);
+      setPhase("idle");
     }
   }
 
   const missing = error === "File not found";
+  const label =
+    phase === "downloading"
+      ? "Downloading…"
+      : busy
+        ? "Opening…"
+        : "Open in Bambu Studio";
 
   return (
     <div className="open-bambu">
@@ -57,7 +79,7 @@ export function OpenInBambuStudioButton({ file }: OpenInBambuStudioButtonProps) 
           aria-hidden="true"
           draggable={false}
         />
-        <span>{busy ? "Opening…" : "Open in Bambu Studio"}</span>
+        <span>{label}</span>
       </button>
 
       {error ? (

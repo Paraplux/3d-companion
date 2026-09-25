@@ -61,6 +61,35 @@ export function renameRemoteFile(
   return invoke("rename_remote_file", { fileId, name });
 }
 
+/** Ensure cloud object is in the local app cache; returns absolute path. */
+export function cacheRemoteFile(
+  fileId: string,
+  contentHash: string,
+  filename: string,
+): Promise<string> {
+  return invoke("cache_remote_file", { fileId, contentHash, filename });
+}
+
+/** Download cloud object to a user-chosen absolute path. */
+export function saveRemoteFile(fileId: string, destPath: string): Promise<void> {
+  return invoke("save_remote_file", { fileId, destPath });
+}
+
+/** Cache then open a cloud STL/3MF in Bambu Studio. */
+export function openRemoteInBambuStudio(
+  fileId: string,
+  contentHash: string,
+  filename: string,
+  extension: string,
+): Promise<void> {
+  return invoke("open_remote_in_bambu_studio", {
+    fileId,
+    contentHash,
+    filename,
+    extension,
+  });
+}
+
 /** Downloads (or returns cached) cloud thumbnail; absolute local path for convertFileSrc. */
 export function getRemoteThumbnail(fileId: string): Promise<string> {
   return invoke("get_remote_thumbnail", { fileId });

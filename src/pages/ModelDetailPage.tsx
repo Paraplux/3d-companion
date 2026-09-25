@@ -316,7 +316,8 @@ export function ModelDetailPage() {
         ) : null}
         {isRemote ? (
           <p className="model-detail__status" role="status">
-            Stored in the cloud. 3D viewer needs a local cache download (coming soon).
+            Stored in the cloud. Download a copy, or open in Bambu Studio (cached
+            locally on first use).
           </p>
         ) : null}
         {file.analysisStatus === "error" && !isRemote ? (

@@ -501,6 +501,146 @@ pub async fn download_thumbnail(
     Ok(path)
 }
 
+/// Download a catalog object into the local cache (keyed by id + content hash).
+/// Returns the absolute path. Respects `cache_ttl_days` for eviction of stale hits.
+pub async fn ensure_cached_file(
+    config: &RemoteConfig,
+    file_id: &str,
+    content_hash: &str,
+    filename: &str,
+    cache_root: &Path,
+) -> Result<std::path::PathBuf, String> {
+    ensure_ready(config)?;
+    validate_file_id(file_id)?;
+
+    let hash = content_hash.trim();
+    if hash.is_empty() {
+        return Err("Missing content hash for cache key.".into());
+    }
+
+    let safe_name = sanitize_cache_filename(filename)?;
+    let dir = cache_root.join(file_id).join(hash);
+    let path = dir.join(&safe_name);
+
+    if path.is_file() && !cache_entry_expired(&path, config.cache_ttl_days)? {
+        return Ok(path);
+    }
+
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("Could not create download cache: {error}"))?;
+
+    let tmp = dir.join(format!(".{safe_name}.partial"));
+    download_file_to_path(config, file_id, &tmp).await?;
+    tokio::fs::rename(&tmp, &path)
+        .await
+        .map_err(|error| format!("Could not finalize cached file: {error}"))?;
+
+    Ok(path)
+}
+
+/// Download a catalog object directly to `dest` (Save As).
+pub async fn download_file_to_path(
+    config: &RemoteConfig,
+    file_id: &str,
+    dest: &Path,
+) -> Result<(), String> {
+    ensure_ready(config)?;
+    validate_file_id(file_id)?;
+
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not create destination folder: {error}"))?;
+    }
+
+    let client = download_http_client()?;
+    let response = client
+        .get(config.v1_url(&format!("files/{file_id}"))?)
+        .headers(auth_headers(&config.api_key)?)
+        .send()
+        .await
+        .map_err(|error| format!("Could not download file: {error}"))?;
+
+    let status = response.status();
+    if status.as_u16() == 404 {
+        return Err("File not found in the cloud catalog.".into());
+    }
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Download failed (HTTP {}). {}",
+            status.as_u16(),
+            truncate(&body, 160)
+        ));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| format!("Could not read download body: {error}"))?;
+
+    if bytes.is_empty() {
+        return Err("Download response was empty.".into());
+    }
+
+    let tmp = dest
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(format!(
+            ".{}.partial",
+            dest.file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("download")
+        ));
+
+    tokio::fs::write(&tmp, &bytes)
+        .await
+        .map_err(|error| format!("Could not write download: {error}"))?;
+    tokio::fs::rename(&tmp, dest)
+        .await
+        .map_err(|error| format!("Could not finalize download: {error}"))?;
+
+    Ok(())
+}
+
+fn download_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        // Large models (up to gateway 512 MB) need a generous transfer window.
+        .timeout(std::time::Duration::from_secs(600))
+        .build()
+        .map_err(|error| format!("Could not create HTTP client: {error}"))
+}
+
+fn sanitize_cache_filename(filename: &str) -> Result<String, String> {
+    let base = Path::new(filename.trim())
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .trim();
+    if base.is_empty() || base == "." || base == ".." {
+        return Err("Invalid file name.".into());
+    }
+    if base.contains('/') || base.contains('\\') {
+        return Err("Invalid file name.".into());
+    }
+    Ok(base.to_string())
+}
+
+fn cache_entry_expired(path: &Path, ttl_days: u32) -> Result<bool, String> {
+    if ttl_days == 0 {
+        return Ok(false);
+    }
+    let meta = std::fs::metadata(path)
+        .map_err(|error| format!("Could not read cache metadata: {error}"))?;
+    let modified = meta
+        .modified()
+        .map_err(|error| format!("Could not read cache mtime: {error}"))?;
+    let age = std::time::SystemTime::now()
+        .duration_since(modified)
+        .unwrap_or_default();
+    let ttl = std::time::Duration::from_secs(u64::from(ttl_days) * 24 * 60 * 60);
+    Ok(age > ttl)
+}
+
 fn validate_file_id(file_id: &str) -> Result<(), String> {
     let ok = uuid::Uuid::parse_str(file_id).is_ok();
     if ok {
