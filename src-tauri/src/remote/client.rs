@@ -264,6 +264,35 @@ pub async fn put_library(
     Ok(etag)
 }
 
+/// Soft-delete: server moves the object under `.trash/` and drops the catalog entry.
+pub async fn delete_file(config: &RemoteConfig, file_id: &str) -> Result<(), String> {
+    ensure_ready(config)?;
+    validate_file_id(file_id)?;
+
+    let client = http_client()?;
+    let response = client
+        .delete(config.v1_url(&format!("files/{file_id}"))?)
+        .headers(auth_headers(&config.api_key)?)
+        .send()
+        .await
+        .map_err(|error| format!("Could not delete remote file: {error}"))?;
+
+    let status = response.status();
+    if status.as_u16() == 404 {
+        return Err("File not found in the cloud catalog.".into());
+    }
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Delete failed (HTTP {}). {}",
+            status.as_u16(),
+            truncate(&body, 160)
+        ));
+    }
+
+    Ok(())
+}
+
 pub async fn upload_file(
     config: &RemoteConfig,
     path: &Path,

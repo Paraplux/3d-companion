@@ -48,6 +48,11 @@ export function uploadRemoteFile(path: string): Promise<RemoteIngestResult> {
   return invoke("upload_remote_file", { path });
 }
 
+/** Soft-delete on the gateway (`files/{id}/` → `.trash/`). */
+export function deleteRemoteFile(fileId: string): Promise<void> {
+  return invoke("delete_remote_file", { fileId });
+}
+
 /** Downloads (or returns cached) cloud thumbnail; absolute local path for convertFileSrc. */
 export function getRemoteThumbnail(fileId: string): Promise<string> {
   return invoke("get_remote_thumbnail", { fileId });

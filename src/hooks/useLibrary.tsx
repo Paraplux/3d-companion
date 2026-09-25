@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -45,12 +46,40 @@ import {
   upsertFileNote as upsertFileNoteApi,
 } from "@/lib/libraryApi";
 import { buildFileCollectionMap, collectionsForFile } from "@/lib/collections";
+import {
+  docAddFavorite,
+  docAddFileToCollection,
+  docAddFileToProject,
+  docAddTagToFile,
+  docCreateCollection,
+  docCreateProject,
+  docCreateTag,
+  docDeleteCollection,
+  docDeleteNote,
+  docDeleteProject,
+  docDeleteTag,
+  docRemoveFavorite,
+  docRemoveFileFromCollection,
+  docRemoveFileFromProject,
+  docRemoveTagFromFile,
+  docRenameCollection,
+  docRenameTag,
+  docUpdateProject,
+  docUpsertNote,
+  hydrateOrgState,
+  parseLibraryDocument,
+  stripFileFromDocument,
+  type OrgState,
+} from "@/lib/libraryDocument";
 import type { LibrarySearchRequest } from "@/lib/librarySearch";
 import { buildFileNoteMap, hasFileNote } from "@/lib/notes";
 import { buildFileProjectMap, projectsForFile } from "@/lib/projects";
 import {
+  deleteRemoteFile,
   getRemoteConfig,
   getRemoteFiles,
+  getRemoteLibrary,
+  putRemoteLibrary,
   REMOTE_CONFIG_CHANGED_EVENT,
   uploadRemoteFile,
 } from "@/lib/remoteApi";
@@ -67,7 +96,7 @@ import type {
   Project,
   Tag,
 } from "@/types/library";
-import type { LibraryFileId } from "@/types/libraryData";
+import type { LibraryDataDocument, LibraryFileId } from "@/types/libraryData";
 
 type LibraryContextValue = {
   locations: LibraryLocation[];
@@ -92,6 +121,9 @@ type LibraryContextValue = {
   removeFolder: (path: string) => Promise<void>;
   rescan: () => Promise<void>;
   uploadFiles: () => Promise<void>;
+  /** Soft-delete a cloud catalog file (moves to `.trash/` on the server).
+   * Returns false if the user cancelled the confirmation dialog. */
+  deleteCloudFile: (libraryFileId: LibraryFileId) => Promise<boolean>;
   search: (request: LibrarySearchRequest) => Promise<LibraryFile[]>;
   isFavorite: (libraryFileId: LibraryFileId) => boolean;
   addFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
@@ -220,29 +252,96 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
+  /** In-memory library.json + ETag when cloudMode (source of truth for org). */
+  const cloudDocRef = useRef<LibraryDataDocument | null>(null);
+  const cloudEtagRef = useRef<string | null>(null);
+  const cloudWriteChainRef = useRef<Promise<unknown>>(Promise.resolve());
+
   const clearError = useCallback(() => setError(null), []);
 
+  const applyOrgState = useCallback((state: OrgState) => {
+    setFavoriteIds(state.favoriteIds);
+    setTags(state.tags);
+    setFileTagMap(state.fileTagMap);
+    setCollections(state.collections);
+    setFileCollectionMap(state.fileCollectionMap);
+    setProjects(state.projects);
+    setFileProjectMap(state.fileProjectMap);
+    setFileNoteMap(state.fileNoteMap);
+  }, []);
+
+  const enqueueCloudWrite = useCallback(<T,>(fn: () => Promise<T>): Promise<T> => {
+    const next = cloudWriteChainRef.current.then(fn, fn);
+    cloudWriteChainRef.current = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }, []);
+
+  const commitCloudDoc = useCallback(
+    <T,>(
+      mutator: (doc: LibraryDataDocument) => {
+        doc: LibraryDataDocument;
+        result: T;
+      },
+    ): Promise<T> =>
+      enqueueCloudWrite(async () => {
+        const current = cloudDocRef.current;
+        const etag = cloudEtagRef.current;
+        if (!current || !etag) {
+          throw new Error("Cloud library organization is not loaded.");
+        }
+        const { doc, result } = mutator(current);
+        const newEtag = await putRemoteLibrary(doc, etag);
+        if (!newEtag) {
+          throw new Error("Cloud library save did not return an ETag.");
+        }
+        cloudDocRef.current = doc;
+        cloudEtagRef.current = newEtag;
+        applyOrgState(hydrateOrgState(doc));
+        return result;
+      }),
+    [applyOrgState, enqueueCloudWrite],
+  );
+
   const refreshTags = useCallback(async () => {
+    if (cloudDocRef.current) {
+      applyOrgState(hydrateOrgState(cloudDocRef.current));
+      return;
+    }
     const next = await loadTagState();
     setTags(next.tags);
     setFileTagMap(next.fileTagMap);
-  }, []);
+  }, [applyOrgState]);
 
   const refreshCollections = useCallback(async () => {
+    if (cloudDocRef.current) {
+      applyOrgState(hydrateOrgState(cloudDocRef.current));
+      return;
+    }
     const next = await loadCollectionState();
     setCollections(next.collections);
     setFileCollectionMap(next.fileCollectionMap);
-  }, []);
+  }, [applyOrgState]);
 
   const refreshProjects = useCallback(async () => {
+    if (cloudDocRef.current) {
+      applyOrgState(hydrateOrgState(cloudDocRef.current));
+      return;
+    }
     const next = await loadProjectState();
     setProjects(next.projects);
     setFileProjectMap(next.fileProjectMap);
-  }, []);
+  }, [applyOrgState]);
 
   const refreshNotes = useCallback(async () => {
+    if (cloudDocRef.current) {
+      applyOrgState(hydrateOrgState(cloudDocRef.current));
+      return;
+    }
     setFileNoteMap(await loadNoteState());
-  }, []);
+  }, [applyOrgState]);
 
   useEffect(() => {
     const onRemoteConfigChanged = () => {
@@ -267,46 +366,56 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         const useCloud =
           remoteConfig.enabled && isRemoteConfigured(remoteConfig);
 
-        const [favorites, tagState, collectionState, projectState, notes] =
-          await Promise.all([
-            getFavoriteIds(),
-            loadTagState(),
-            loadCollectionState(),
-            loadProjectState(),
-            loadNoteState(),
-          ]);
-
-        if (cancelled) {
-          return;
-        }
-
-        setFavoriteIds(favorites);
-        setTags(tagState.tags);
-        setFileTagMap(tagState.fileTagMap);
-        setCollections(collectionState.collections);
-        setFileCollectionMap(collectionState.fileCollectionMap);
-        setProjects(projectState.projects);
-        setFileProjectMap(projectState.fileProjectMap);
-        setFileNoteMap(notes);
         setCloudMode(useCloud);
 
         if (useCloud) {
           setScanning(true);
           setScanningLabel("Loading cloud library…");
-          const remoteFiles = await getRemoteFiles();
+          const [remoteFiles, remoteLibrary] = await Promise.all([
+            getRemoteFiles(),
+            getRemoteLibrary(),
+          ]);
           if (cancelled) {
             return;
           }
+          if (!remoteLibrary.etag) {
+            throw new Error("Cloud library did not return an ETag.");
+          }
+          const doc = parseLibraryDocument(remoteLibrary.document);
+          cloudDocRef.current = doc;
+          cloudEtagRef.current = remoteLibrary.etag;
+          applyOrgState(hydrateOrgState(doc));
           setLocations([]);
           setFiles(remoteFilesToLibraryFiles(remoteFiles));
           setError(null);
           setScanning(false);
           setScanningLabel(null);
         } else {
-          const snapshot = await getLibrarySnapshot();
+          cloudDocRef.current = null;
+          cloudEtagRef.current = null;
+
+          const [favorites, tagState, collectionState, projectState, notes, snapshot] =
+            await Promise.all([
+              getFavoriteIds(),
+              loadTagState(),
+              loadCollectionState(),
+              loadProjectState(),
+              loadNoteState(),
+              getLibrarySnapshot(),
+            ]);
+
           if (cancelled) {
             return;
           }
+
+          setFavoriteIds(favorites);
+          setTags(tagState.tags);
+          setFileTagMap(tagState.fileTagMap);
+          setCollections(collectionState.collections);
+          setFileCollectionMap(collectionState.fileCollectionMap);
+          setProjects(projectState.projects);
+          setFileProjectMap(projectState.fileProjectMap);
+          setFileNoteMap(notes);
           setLocations(snapshot.locations);
           setFiles(snapshot.files);
           setError(null);
@@ -336,7 +445,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [reloadToken]);
+  }, [applyOrgState, reloadToken]);
 
   useEffect(() => {
     if (cloudMode) {
@@ -488,7 +597,17 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
     try {
       if (cloudMode) {
-        const remoteFiles = await getRemoteFiles();
+        const [remoteFiles, remoteLibrary] = await Promise.all([
+          getRemoteFiles(),
+          getRemoteLibrary(),
+        ]);
+        if (!remoteLibrary.etag) {
+          throw new Error("Cloud library did not return an ETag.");
+        }
+        const doc = parseLibraryDocument(remoteLibrary.document);
+        cloudDocRef.current = doc;
+        cloudEtagRef.current = remoteLibrary.etag;
+        applyOrgState(hydrateOrgState(doc));
         setFiles(remoteFilesToLibraryFiles(remoteFiles));
         setLocations([]);
       } else {
@@ -508,7 +627,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       setScanning(false);
       setScanningLabel(null);
     }
-  }, [clearError, cloudMode]);
+  }, [applyOrgState, clearError, cloudMode]);
 
   const uploadFiles = useCallback(async () => {
     if (!cloudMode) {
@@ -579,6 +698,47 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }
   }, [clearError, cloudMode]);
 
+  const deleteCloudFile = useCallback(
+    async (libraryFileId: LibraryFileId): Promise<boolean> => {
+      if (!cloudMode) {
+        setError("Delete from cloud is only available while Cloud library is enabled.");
+        return false;
+      }
+
+      clearError();
+
+      const file = files.find((entry) => entry.libraryFileId === libraryFileId);
+      const label = file?.name ?? "this model";
+      const confirmed = await ask(
+        `Delete “${label}” from the cloud?\n\nThe file will be moved to trash on the server (soft delete). It will disappear from your library.`,
+        {
+          title: "Delete from cloud",
+          kind: "warning",
+        },
+      );
+
+      if (!confirmed) {
+        return false;
+      }
+
+      try {
+        await deleteRemoteFile(libraryFileId);
+        await commitCloudDoc((doc) => ({
+          doc: stripFileFromDocument(doc, libraryFileId),
+          result: undefined,
+        }));
+        setFiles((current) =>
+          current.filter((entry) => entry.libraryFileId !== libraryFileId),
+        );
+        return true;
+      } catch (err) {
+        setError(toUserError(err, "Could not delete that file from the cloud."));
+        throw err;
+      }
+    },
+    [clearError, cloudMode, commitCloudDoc, files],
+  );
+
   const favoriteIdSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
 
   const search = useCallback(
@@ -599,6 +759,18 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const addFavorite = useCallback(
     async (libraryFileId: LibraryFileId) => {
       clearError();
+      if (cloudMode) {
+        try {
+          await commitCloudDoc((doc) => ({
+            doc: docAddFavorite(doc, libraryFileId),
+            result: undefined,
+          }));
+        } catch (err) {
+          setError(toUserError(err, "Could not add that favorite."));
+        }
+        return;
+      }
+
       let previous: LibraryFileId[] | null = null;
       setFavoriteIds((current) => {
         previous = current;
@@ -614,12 +786,24 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setError(toUserError(err, "Could not add that favorite."));
       }
     },
-    [clearError],
+    [clearError, cloudMode, commitCloudDoc],
   );
 
   const removeFavorite = useCallback(
     async (libraryFileId: LibraryFileId) => {
       clearError();
+      if (cloudMode) {
+        try {
+          await commitCloudDoc((doc) => ({
+            doc: docRemoveFavorite(doc, libraryFileId),
+            result: undefined,
+          }));
+        } catch (err) {
+          setError(toUserError(err, "Could not remove that favorite."));
+        }
+        return;
+      }
+
       let previous: LibraryFileId[] | null = null;
       setFavoriteIds((current) => {
         previous = current;
@@ -635,7 +819,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setError(toUserError(err, "Could not remove that favorite."));
       }
     },
-    [clearError],
+    [clearError, cloudMode, commitCloudDoc],
   );
 
   const toggleFavorite = useCallback(
@@ -672,6 +856,12 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     async (name: string) => {
       clearError();
       try {
+        if (cloudMode) {
+          return await commitCloudDoc((doc) => {
+            const outcome = docCreateTag(doc, name);
+            return { doc: outcome.doc, result: outcome.tag };
+          });
+        }
         const tag = await createTagApi(name);
         await refreshTags();
         return tag;
@@ -680,13 +870,19 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshTags],
+    [clearError, cloudMode, commitCloudDoc, refreshTags],
   );
 
   const renameTag = useCallback(
     async (tagId: string, name: string) => {
       clearError();
       try {
+        if (cloudMode) {
+          return await commitCloudDoc((doc) => {
+            const outcome = docRenameTag(doc, tagId, name);
+            return { doc: outcome.doc, result: outcome.tag };
+          });
+        }
         const tag = await renameTagApi(tagId, name);
         await refreshTags();
         return tag;
@@ -695,13 +891,20 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshTags],
+    [clearError, cloudMode, commitCloudDoc, refreshTags],
   );
 
   const deleteTag = useCallback(
     async (tagId: string) => {
       clearError();
       try {
+        if (cloudMode) {
+          await commitCloudDoc((doc) => ({
+            doc: docDeleteTag(doc, tagId),
+            result: undefined,
+          }));
+          return;
+        }
         await deleteTagApi(tagId);
         await refreshTags();
       } catch (err) {
@@ -709,12 +912,25 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshTags],
+    [clearError, cloudMode, commitCloudDoc, refreshTags],
   );
 
   const addTagToFile = useCallback(
     async (libraryFileId: LibraryFileId, tagId: string) => {
       clearError();
+      if (cloudMode) {
+        try {
+          await commitCloudDoc((doc) => ({
+            doc: docAddTagToFile(doc, libraryFileId, tagId),
+            result: undefined,
+          }));
+        } catch (err) {
+          setError(toUserError(err, "Could not add that tag."));
+          throw err;
+        }
+        return;
+      }
+
       setFileTagMap((current) => {
         const existing = current[libraryFileId] ?? [];
         if (existing.includes(tagId)) {
@@ -732,12 +948,25 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshTags],
+    [clearError, cloudMode, commitCloudDoc, refreshTags],
   );
 
   const removeTagFromFile = useCallback(
     async (libraryFileId: LibraryFileId, tagId: string) => {
       clearError();
+      if (cloudMode) {
+        try {
+          await commitCloudDoc((doc) => ({
+            doc: docRemoveTagFromFile(doc, libraryFileId, tagId),
+            result: undefined,
+          }));
+        } catch (err) {
+          setError(toUserError(err, "Could not remove that tag."));
+          throw err;
+        }
+        return;
+      }
+
       setFileTagMap((current) => {
         const existing = current[libraryFileId];
         if (!existing) {
@@ -758,7 +987,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshTags],
+    [clearError, cloudMode, commitCloudDoc, refreshTags],
   );
 
   const addTagNameToFile = useCallback(
@@ -780,6 +1009,12 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     async (name: string) => {
       clearError();
       try {
+        if (cloudMode) {
+          return await commitCloudDoc((doc) => {
+            const outcome = docCreateCollection(doc, name);
+            return { doc: outcome.doc, result: outcome.collection };
+          });
+        }
         const collection = await createCollectionApi(name);
         await refreshCollections();
         return collection;
@@ -788,13 +1023,19 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshCollections],
+    [clearError, cloudMode, commitCloudDoc, refreshCollections],
   );
 
   const renameCollection = useCallback(
     async (collectionId: string, name: string) => {
       clearError();
       try {
+        if (cloudMode) {
+          return await commitCloudDoc((doc) => {
+            const outcome = docRenameCollection(doc, collectionId, name);
+            return { doc: outcome.doc, result: outcome.collection };
+          });
+        }
         const collection = await renameCollectionApi(collectionId, name);
         await refreshCollections();
         return collection;
@@ -803,13 +1044,20 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshCollections],
+    [clearError, cloudMode, commitCloudDoc, refreshCollections],
   );
 
   const deleteCollection = useCallback(
     async (collectionId: string) => {
       clearError();
       try {
+        if (cloudMode) {
+          await commitCloudDoc((doc) => ({
+            doc: docDeleteCollection(doc, collectionId),
+            result: undefined,
+          }));
+          return;
+        }
         await deleteCollectionApi(collectionId);
         await refreshCollections();
       } catch (err) {
@@ -817,12 +1065,25 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshCollections],
+    [clearError, cloudMode, commitCloudDoc, refreshCollections],
   );
 
   const addFileToCollection = useCallback(
     async (libraryFileId: LibraryFileId, collectionId: string) => {
       clearError();
+      if (cloudMode) {
+        try {
+          await commitCloudDoc((doc) => ({
+            doc: docAddFileToCollection(doc, libraryFileId, collectionId),
+            result: undefined,
+          }));
+        } catch (err) {
+          setError(toUserError(err, "Could not add that model to the collection."));
+          throw err;
+        }
+        return;
+      }
+
       setFileCollectionMap((current) => {
         const existing = current[libraryFileId] ?? [];
         if (existing.includes(collectionId)) {
@@ -840,12 +1101,27 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshCollections],
+    [clearError, cloudMode, commitCloudDoc, refreshCollections],
   );
 
   const removeFileFromCollection = useCallback(
     async (libraryFileId: LibraryFileId, collectionId: string) => {
       clearError();
+      if (cloudMode) {
+        try {
+          await commitCloudDoc((doc) => ({
+            doc: docRemoveFileFromCollection(doc, libraryFileId, collectionId),
+            result: undefined,
+          }));
+        } catch (err) {
+          setError(
+            toUserError(err, "Could not remove that model from the collection."),
+          );
+          throw err;
+        }
+        return;
+      }
+
       setFileCollectionMap((current) => {
         const existing = current[libraryFileId];
         if (!existing) {
@@ -866,7 +1142,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshCollections],
+    [clearError, cloudMode, commitCloudDoc, refreshCollections],
   );
 
   const addCollectionNameToFile = useCallback(
@@ -888,6 +1164,12 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     async (name: string, description?: string | null) => {
       clearError();
       try {
+        if (cloudMode) {
+          return await commitCloudDoc((doc) => {
+            const outcome = docCreateProject(doc, name, description);
+            return { doc: outcome.doc, result: outcome.project };
+          });
+        }
         const project = await createProjectApi(name, description);
         await refreshProjects();
         return project;
@@ -896,13 +1178,19 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshProjects],
+    [clearError, cloudMode, commitCloudDoc, refreshProjects],
   );
 
   const updateProject = useCallback(
     async (projectId: string, name: string, description?: string | null) => {
       clearError();
       try {
+        if (cloudMode) {
+          return await commitCloudDoc((doc) => {
+            const outcome = docUpdateProject(doc, projectId, name, description);
+            return { doc: outcome.doc, result: outcome.project };
+          });
+        }
         const project = await updateProjectApi(projectId, name, description);
         await refreshProjects();
         return project;
@@ -911,13 +1199,20 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshProjects],
+    [clearError, cloudMode, commitCloudDoc, refreshProjects],
   );
 
   const deleteProject = useCallback(
     async (projectId: string) => {
       clearError();
       try {
+        if (cloudMode) {
+          await commitCloudDoc((doc) => ({
+            doc: docDeleteProject(doc, projectId),
+            result: undefined,
+          }));
+          return;
+        }
         await deleteProjectApi(projectId);
         await refreshProjects();
       } catch (err) {
@@ -925,12 +1220,25 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshProjects],
+    [clearError, cloudMode, commitCloudDoc, refreshProjects],
   );
 
   const addFileToProject = useCallback(
     async (libraryFileId: LibraryFileId, projectId: string) => {
       clearError();
+      if (cloudMode) {
+        try {
+          await commitCloudDoc((doc) => ({
+            doc: docAddFileToProject(doc, libraryFileId, projectId),
+            result: undefined,
+          }));
+        } catch (err) {
+          setError(toUserError(err, "Could not add that model to the project."));
+          throw err;
+        }
+        return;
+      }
+
       setFileProjectMap((current) => {
         const existing = current[libraryFileId] ?? [];
         if (existing.includes(projectId)) {
@@ -948,12 +1256,25 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshProjects],
+    [clearError, cloudMode, commitCloudDoc, refreshProjects],
   );
 
   const removeFileFromProject = useCallback(
     async (libraryFileId: LibraryFileId, projectId: string) => {
       clearError();
+      if (cloudMode) {
+        try {
+          await commitCloudDoc((doc) => ({
+            doc: docRemoveFileFromProject(doc, libraryFileId, projectId),
+            result: undefined,
+          }));
+        } catch (err) {
+          setError(toUserError(err, "Could not remove that model from the project."));
+          throw err;
+        }
+        return;
+      }
+
       setFileProjectMap((current) => {
         const existing = current[libraryFileId];
         if (!existing) {
@@ -974,7 +1295,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError, refreshProjects],
+    [clearError, cloudMode, commitCloudDoc, refreshProjects],
   );
 
   const addProjectNameToFile = useCallback(
@@ -1000,6 +1321,12 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     async (libraryFileId: LibraryFileId, content: string) => {
       clearError();
       try {
+        if (cloudMode) {
+          return await commitCloudDoc((doc) => {
+            const outcome = docUpsertNote(doc, libraryFileId, content);
+            return { doc: outcome.doc, result: outcome.note };
+          });
+        }
         const note = await upsertFileNoteApi(libraryFileId, content);
         setFileNoteMap((current) => {
           const next = { ...current };
@@ -1016,13 +1343,20 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError],
+    [clearError, cloudMode, commitCloudDoc],
   );
 
   const deleteFileNote = useCallback(
     async (libraryFileId: LibraryFileId) => {
       clearError();
       try {
+        if (cloudMode) {
+          await commitCloudDoc((doc) => ({
+            doc: docDeleteNote(doc, libraryFileId),
+            result: undefined,
+          }));
+          return;
+        }
         await deleteFileNoteApi(libraryFileId);
         setFileNoteMap((current) => {
           if (!current[libraryFileId]) {
@@ -1037,7 +1371,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [clearError],
+    [clearError, cloudMode, commitCloudDoc],
   );
 
   const value = useMemo(
@@ -1063,6 +1397,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       removeFolder,
       rescan,
       uploadFiles,
+      deleteCloudFile,
       search,
       isFavorite,
       addFavorite,
@@ -1116,6 +1451,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       removeFolder,
       rescan,
       uploadFiles,
+      deleteCloudFile,
       search,
       isFavorite,
       addFavorite,

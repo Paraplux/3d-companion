@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { EcosystemIcon } from "@/components/library/EcosystemIcon";
 import { FavoriteButton } from "@/components/library/FavoriteButton";
@@ -16,6 +16,7 @@ import {
   fileParentDir,
   libraryBrowseHref,
 } from "@/lib/libraryBrowse";
+import { toUserError } from "@/lib/libraryApi";
 import {
   returnActionLabel,
   returnLabelFromPath,
@@ -34,7 +35,10 @@ export function ModelDetailPage() {
   const { fileId } = useParams<{ fileId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { files, locations, ready } = useLibrary();
+  const { files, locations, ready, deleteCloudFile, error, clearError } =
+    useLibrary();
+  const [deleting, setDeleting] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   const returnTo =
     (location.state as DetailLocationState | null)?.libraryReturnTo ?? "/library";
@@ -98,6 +102,25 @@ export function ModelDetailPage() {
     return items;
   }, [file, locationName, navigate, returnLabel, returnTo]);
 
+  async function handleDeleteFromCloud() {
+    if (!file) {
+      return;
+    }
+    setLocalError(null);
+    clearError();
+    setDeleting(true);
+    try {
+      const deleted = await deleteCloudFile(file.libraryFileId);
+      if (deleted) {
+        navigate(returnTo, { replace: true });
+      }
+    } catch (err) {
+      setLocalError(toUserError(err, "Could not delete that file from the cloud."));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (!ready) {
     return (
       <section className="page page--model-detail">
@@ -129,6 +152,7 @@ export function ModelDetailPage() {
   const analyzing =
     !isRemote &&
     (file.analysisStatus === "pending" || file.analysisStatus === "analyzing");
+  const bannerError = localError ?? error;
 
   return (
     <section className="page page--model-detail">
@@ -137,11 +161,39 @@ export function ModelDetailPage() {
           title={displayName}
           subtitle={file.name}
           trailing={
-            <FavoriteButton libraryFileId={file.libraryFileId} variant="label" />
+            <div className="model-detail__actions">
+              <FavoriteButton libraryFileId={file.libraryFileId} variant="label" />
+              {isRemote ? (
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  disabled={deleting}
+                  onClick={() => void handleDeleteFromCloud()}
+                >
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+              ) : null}
+            </div>
           }
         />
         <LibraryBreadcrumbs items={breadcrumbItems} />
       </div>
+
+      {bannerError ? (
+        <div className="banner banner--error" role="alert">
+          <p>{bannerError}</p>
+          <button
+            type="button"
+            className="banner__dismiss"
+            onClick={() => {
+              setLocalError(null);
+              clearError();
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       <div className="model-detail__body">
         {analyzing ? (

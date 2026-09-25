@@ -1968,6 +1968,14 @@ a:focus-visible {
   gap: 1rem;
 }
 
+.model-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+  align-items: center;
+}
+
 .model-detail__top {
   display: flex;
   flex-direction: column;
