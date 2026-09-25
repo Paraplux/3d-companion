@@ -35,9 +35,19 @@ export function ModelDetailPage() {
   const { fileId } = useParams<{ fileId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { files, locations, ready, deleteCloudFile, error, clearError } =
-    useLibrary();
+  const {
+    files,
+    locations,
+    ready,
+    deleteCloudFile,
+    renameCloudFile,
+    error,
+    clearError,
+  } = useLibrary();
   const [deleting, setDeleting] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   const returnTo =
@@ -121,6 +131,34 @@ export function ModelDetailPage() {
     }
   }
 
+  async function handleRename() {
+    if (!file) {
+      return;
+    }
+    const trimmed = draftName.trim();
+    if (!trimmed) {
+      setLocalError("A name is required.");
+      return;
+    }
+    if (trimmed === displayNameFromFilename(file.name)) {
+      setRenaming(false);
+      return;
+    }
+
+    setBusy(true);
+    setLocalError(null);
+    clearError();
+    try {
+      // Send stem only — server keeps/re-appends the current extension.
+      await renameCloudFile(file.libraryFileId, trimmed);
+      setRenaming(false);
+    } catch (err) {
+      setLocalError(toUserError(err, "Could not rename that file."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!ready) {
     return (
       <section className="page page--model-detail">
@@ -153,6 +191,7 @@ export function ModelDetailPage() {
     !isRemote &&
     (file.analysisStatus === "pending" || file.analysisStatus === "analyzing");
   const bannerError = localError ?? error;
+  const actionsDisabled = deleting || busy;
 
   return (
     <section className="page page--model-detail">
@@ -164,20 +203,94 @@ export function ModelDetailPage() {
             <div className="model-detail__actions">
               <FavoriteButton libraryFileId={file.libraryFileId} variant="label" />
               {isRemote ? (
-                <button
-                  type="button"
-                  className="button button--ghost"
-                  disabled={deleting}
-                  onClick={() => void handleDeleteFromCloud()}
-                >
-                  {deleting ? "Deleting…" : "Delete"}
-                </button>
+                renaming ? (
+                  <>
+                    <button
+                      type="button"
+                      className="button button--ghost"
+                      disabled={busy}
+                      onClick={() => {
+                        setRenaming(false);
+                        setLocalError(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--primary"
+                      disabled={busy || !draftName.trim()}
+                      onClick={() => void handleRename()}
+                    >
+                      {busy ? "Saving…" : "Save"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="button button--ghost"
+                      disabled={actionsDisabled}
+                      onClick={() => {
+                        setDraftName(displayNameFromFilename(file.name));
+                        setRenaming(true);
+                        setLocalError(null);
+                      }}
+                    >
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost"
+                      disabled={actionsDisabled}
+                      onClick={() => void handleDeleteFromCloud()}
+                    >
+                      {deleting ? "Deleting…" : "Delete"}
+                    </button>
+                  </>
+                )
               ) : null}
             </div>
           }
         />
         <LibraryBreadcrumbs items={breadcrumbItems} />
       </div>
+
+      {renaming && isRemote ? (
+        <form
+          className="model-detail__rename"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleRename();
+          }}
+        >
+          <label className="model-detail__rename-label" htmlFor="rename-model">
+            Name
+          </label>
+          <input
+            id="rename-model"
+            type="text"
+            className="model-detail__rename-input"
+            value={draftName}
+            disabled={busy}
+            autoFocus
+            placeholder="chassis-v2"
+            onChange={(event) => {
+              setDraftName(event.target.value);
+              setLocalError(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setRenaming(false);
+                setLocalError(null);
+              }
+            }}
+          />
+          <p className="model-detail__rename-hint">
+            Extension (.{file.extension}) is kept automatically.
+          </p>
+        </form>
+      ) : null}
 
       {bannerError ? (
         <div className="banner banner--error" role="alert">

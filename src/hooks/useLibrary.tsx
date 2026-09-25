@@ -81,9 +81,10 @@ import {
   getRemoteLibrary,
   putRemoteLibrary,
   REMOTE_CONFIG_CHANGED_EVENT,
+  renameRemoteFile,
   uploadRemoteFile,
 } from "@/lib/remoteApi";
-import { remoteFilesToLibraryFiles } from "@/lib/remoteFiles";
+import { remoteFileToLibraryFile, remoteFilesToLibraryFiles } from "@/lib/remoteFiles";
 import { filterLibraryFilesLocally } from "@/lib/remoteSearch";
 import { buildFileTagMap } from "@/lib/tags";
 import { isRemoteConfigured } from "@/types/remoteConfig";
@@ -124,6 +125,11 @@ type LibraryContextValue = {
   /** Soft-delete a cloud catalog file (moves to `.trash/` on the server).
    * Returns false if the user cancelled the confirmation dialog. */
   deleteCloudFile: (libraryFileId: LibraryFileId) => Promise<boolean>;
+  /** Rename a cloud catalog file display name (PATCH; extension unchanged). */
+  renameCloudFile: (
+    libraryFileId: LibraryFileId,
+    name: string,
+  ) => Promise<LibraryFile>;
   search: (request: LibrarySearchRequest) => Promise<LibraryFile[]>;
   isFavorite: (libraryFileId: LibraryFileId) => boolean;
   addFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
@@ -737,6 +743,53 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       }
     },
     [clearError, cloudMode, commitCloudDoc, files],
+  );
+
+  const renameCloudFile = useCallback(
+    async (libraryFileId: LibraryFileId, name: string): Promise<LibraryFile> => {
+      if (!cloudMode) {
+        const message =
+          "Rename is only available while Cloud library is enabled.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      clearError();
+      const trimmed = name.trim();
+      if (!trimmed) {
+        const message = "A name is required.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      try {
+        const updated = await renameRemoteFile(libraryFileId, trimmed);
+        // Preserve createdAt from the in-memory row when the PATCH payload omits it.
+        const previous = files.find(
+          (entry) => entry.libraryFileId === libraryFileId,
+        );
+        const mapped = remoteFileToLibraryFile({
+          ...updated,
+          createdAt:
+            updated.createdAt ||
+            (previous
+              ? new Date(previous.modifiedAt).toISOString()
+              : updated.updatedAt),
+          hasThumbnail:
+            updated.hasThumbnail ?? previous?.hasRemoteThumbnail ?? false,
+        });
+        setFiles((current) =>
+          current.map((entry) =>
+            entry.libraryFileId === libraryFileId ? mapped : entry,
+          ),
+        );
+        return mapped;
+      } catch (err) {
+        setError(toUserError(err, "Could not rename that file."));
+        throw err;
+      }
+    },
+    [clearError, cloudMode, files],
   );
 
   const favoriteIdSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
@@ -1398,6 +1451,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       rescan,
       uploadFiles,
       deleteCloudFile,
+      renameCloudFile,
       search,
       isFavorite,
       addFavorite,
@@ -1452,6 +1506,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       rescan,
       uploadFiles,
       deleteCloudFile,
+      renameCloudFile,
       search,
       isFavorite,
       addFavorite,

@@ -20,8 +20,8 @@ use library::{
 };
 use remote::{
     delete_remote_file, get_remote_config, get_remote_files, get_remote_library,
-    get_remote_thumbnail, put_remote_library, save_remote_config, test_remote_connection,
-    upload_remote_file,
+    get_remote_thumbnail, put_remote_library, rename_remote_file, save_remote_config,
+    test_remote_connection, upload_remote_file,
 };
 use tauri::Manager;
 
@@ -97,6 +97,7 @@ pub fn run() {
             put_remote_library,
             upload_remote_file,
             delete_remote_file,
+            rename_remote_file,
             get_remote_thumbnail,
         ])
         .run(tauri::generate_context!())

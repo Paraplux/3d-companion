@@ -1976,6 +1976,36 @@ a:focus-visible {
   align-items: center;
 }
 
+.model-detail__rename {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0 0 1rem;
+  max-width: 28rem;
+}
+
+.model-detail__rename-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.model-detail__rename-input {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.model-detail__rename-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 .model-detail__top {
   display: flex;
   flex-direction: column;

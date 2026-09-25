@@ -293,6 +293,82 @@ pub async fn delete_file(config: &RemoteConfig, file_id: &str) -> Result<(), Str
     Ok(())
 }
 
+/// Rename display name in catalog/meta (metadata only; extension must stay the same).
+pub async fn rename_file(
+    config: &RemoteConfig,
+    file_id: &str,
+    name: &str,
+) -> Result<RemoteFileSummary, String> {
+    ensure_ready(config)?;
+    validate_file_id(file_id)?;
+
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("A name is required.".into());
+    }
+
+    let client = http_client()?;
+    let mut headers = auth_headers(&config.api_key)?;
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+    let response = client
+        .patch(config.v1_url(&format!("files/{file_id}"))?)
+        .headers(headers)
+        .json(&serde_json::json!({ "name": trimmed }))
+        .send()
+        .await
+        .map_err(|error| format!("Could not rename remote file: {error}"))?;
+
+    let status = response.status();
+    if status.as_u16() == 404 {
+        return Err("File not found in the cloud catalog.".into());
+    }
+    if status.as_u16() == 400 {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Could not rename: {}", truncate(&body, 160)));
+    }
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Rename failed (HTTP {}). {}",
+            status.as_u16(),
+            truncate(&body, 160)
+        ));
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RenamePayload {
+        id: String,
+        name: String,
+        extension: String,
+        size: i64,
+        #[serde(alias = "content_hash")]
+        content_hash: String,
+        #[serde(alias = "updated_at")]
+        updated_at: String,
+        #[serde(default, alias = "has_thumbnail")]
+        has_thumbnail: bool,
+    }
+
+    let payload: RenamePayload = response
+        .json()
+        .await
+        .map_err(|error| format!("Could not parse rename response: {error}"))?;
+
+    Ok(RemoteFileSummary {
+        id: payload.id,
+        name: payload.name,
+        extension: payload.extension,
+        size: payload.size,
+        content_hash: payload.content_hash,
+        // Catalog list includes createdAt; rename response does not — keep empty.
+        created_at: String::new(),
+        updated_at: payload.updated_at,
+        has_thumbnail: payload.has_thumbnail,
+    })
+}
+
 pub async fn upload_file(
     config: &RemoteConfig,
     path: &Path,

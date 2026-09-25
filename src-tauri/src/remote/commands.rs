@@ -2,9 +2,9 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use super::client::{
-    delete_file, download_thumbnail, get_library, list_files, put_library, test_connection,
-    upload_file, RemoteConnectionTestResult, RemoteFileSummary, RemoteIngestResult,
-    RemoteLibraryResponse,
+    delete_file, download_thumbnail, get_library, list_files, put_library, rename_file,
+    test_connection, upload_file, RemoteConnectionTestResult, RemoteFileSummary,
+    RemoteIngestResult, RemoteLibraryResponse,
 };
 use super::config::{load_config, save_config, RemoteConfig};
 
@@ -71,6 +71,16 @@ pub async fn upload_remote_file(app: AppHandle, path: String) -> Result<RemoteIn
 pub async fn delete_remote_file(app: AppHandle, file_id: String) -> Result<(), String> {
     let config = load_config(&app)?;
     delete_file(&config, &file_id).await
+}
+
+#[tauri::command]
+pub async fn rename_remote_file(
+    app: AppHandle,
+    file_id: String,
+    name: String,
+) -> Result<RemoteFileSummary, String> {
+    let config = load_config(&app)?;
+    rename_file(&config, &file_id, &name).await
 }
 
 #[tauri::command]

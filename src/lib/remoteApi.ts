@@ -53,6 +53,14 @@ export function deleteRemoteFile(fileId: string): Promise<void> {
   return invoke("delete_remote_file", { fileId });
 }
 
+/** Rename display name (metadata only; extension must stay the same). */
+export function renameRemoteFile(
+  fileId: string,
+  name: string,
+): Promise<RemoteFileSummary> {
+  return invoke("rename_remote_file", { fileId, name });
+}
+
 /** Downloads (or returns cached) cloud thumbnail; absolute local path for convertFileSrc. */
 export function getRemoteThumbnail(fileId: string): Promise<string> {
   return invoke("get_remote_thumbnail", { fileId });

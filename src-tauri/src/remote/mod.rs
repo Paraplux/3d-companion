@@ -4,6 +4,6 @@ mod config;
 
 pub use commands::{
     delete_remote_file, get_remote_config, get_remote_files, get_remote_library,
-    get_remote_thumbnail, put_remote_library, save_remote_config, test_remote_connection,
-    upload_remote_file,
+    get_remote_thumbnail, put_remote_library, rename_remote_file, save_remote_config,
+    test_remote_connection, upload_remote_file,
 };
