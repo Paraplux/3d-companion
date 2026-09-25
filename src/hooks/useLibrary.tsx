@@ -48,7 +48,16 @@ import { buildFileCollectionMap, collectionsForFile } from "@/lib/collections";
 import type { LibrarySearchRequest } from "@/lib/librarySearch";
 import { buildFileNoteMap, hasFileNote } from "@/lib/notes";
 import { buildFileProjectMap, projectsForFile } from "@/lib/projects";
+import {
+  getRemoteConfig,
+  getRemoteFiles,
+  REMOTE_CONFIG_CHANGED_EVENT,
+  uploadRemoteFile,
+} from "@/lib/remoteApi";
+import { remoteFilesToLibraryFiles } from "@/lib/remoteFiles";
+import { filterLibraryFilesLocally } from "@/lib/remoteSearch";
 import { buildFileTagMap } from "@/lib/tags";
+import { isRemoteConfigured } from "@/types/remoteConfig";
 import type {
   Collection,
   FileNote,
@@ -71,14 +80,18 @@ type LibraryContextValue = {
   projects: Project[];
   fileProjectMap: Record<LibraryFileId, string[]>;
   fileNoteMap: Record<LibraryFileId, FileNote>;
+  /** True when Cloud library is enabled — local folders are not the catalog. */
+  cloudMode: boolean;
   ready: boolean;
   scanning: boolean;
   scanningLabel: string | null;
+  uploading: boolean;
   error: string | null;
   clearError: () => void;
   addFolder: () => Promise<void>;
   removeFolder: (path: string) => Promise<void>;
   rescan: () => Promise<void>;
+  uploadFiles: () => Promise<void>;
   search: (request: LibrarySearchRequest) => Promise<LibraryFile[]>;
   isFavorite: (libraryFileId: LibraryFileId) => boolean;
   addFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
@@ -199,10 +212,13 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [fileNoteMap, setFileNoteMap] = useState<Record<LibraryFileId, FileNote>>(
     {},
   );
+  const [cloudMode, setCloudMode] = useState(false);
   const [ready, setReady] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanningLabel, setScanningLabel] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -229,24 +245,41 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const onRemoteConfigChanged = () => {
+      setReloadToken((value) => value + 1);
+    };
+    window.addEventListener(REMOTE_CONFIG_CHANGED_EVENT, onRemoteConfigChanged);
+    return () => {
+      window.removeEventListener(
+        REMOTE_CONFIG_CHANGED_EVENT,
+        onRemoteConfigChanged,
+      );
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function bootstrap() {
+      setReady(false);
       try {
-        const [snapshot, favorites, tagState, collectionState, projectState, notes] =
+        const remoteConfig = await getRemoteConfig();
+        const useCloud =
+          remoteConfig.enabled && isRemoteConfigured(remoteConfig);
+
+        const [favorites, tagState, collectionState, projectState, notes] =
           await Promise.all([
-            getLibrarySnapshot(),
             getFavoriteIds(),
             loadTagState(),
             loadCollectionState(),
             loadProjectState(),
             loadNoteState(),
           ]);
+
         if (cancelled) {
           return;
         }
-        setLocations(snapshot.locations);
-        setFiles(snapshot.files);
+
         setFavoriteIds(favorites);
         setTags(tagState.tags);
         setFileTagMap(tagState.fileTagMap);
@@ -255,14 +288,41 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setProjects(projectState.projects);
         setFileProjectMap(projectState.fileProjectMap);
         setFileNoteMap(notes);
-        setError(null);
-        if (snapshot.reconciling) {
+        setCloudMode(useCloud);
+
+        if (useCloud) {
           setScanning(true);
-          setScanningLabel("Updating library…");
+          setScanningLabel("Loading cloud library…");
+          const remoteFiles = await getRemoteFiles();
+          if (cancelled) {
+            return;
+          }
+          setLocations([]);
+          setFiles(remoteFilesToLibraryFiles(remoteFiles));
+          setError(null);
+          setScanning(false);
+          setScanningLabel(null);
+        } else {
+          const snapshot = await getLibrarySnapshot();
+          if (cancelled) {
+            return;
+          }
+          setLocations(snapshot.locations);
+          setFiles(snapshot.files);
+          setError(null);
+          if (snapshot.reconciling) {
+            setScanning(true);
+            setScanningLabel("Updating library…");
+          } else {
+            setScanning(false);
+            setScanningLabel(null);
+          }
         }
       } catch (err) {
         if (!cancelled) {
           setError(toUserError(err, "Could not load your library."));
+          setScanning(false);
+          setScanningLabel(null);
         }
       } finally {
         if (!cancelled) {
@@ -276,9 +336,13 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadToken]);
 
   useEffect(() => {
+    if (cloudMode) {
+      return;
+    }
+
     let cancelled = false;
     let unlisten: (() => void) | undefined;
 
@@ -340,9 +404,14 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       unlisten?.();
     };
-  }, [refreshNotes]);
+  }, [cloudMode, refreshNotes]);
 
   const addFolder = useCallback(async () => {
+    if (cloudMode) {
+      setError("Local folders are disabled while Cloud library is enabled.");
+      return;
+    }
+
     clearError();
 
     try {
@@ -377,10 +446,15 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       setScanning(false);
       setScanningLabel(null);
     }
-  }, [clearError]);
+  }, [clearError, cloudMode]);
 
   const removeFolder = useCallback(
     async (path: string) => {
+      if (cloudMode) {
+        setError("Local folders are disabled while Cloud library is enabled.");
+        return;
+      }
+
       clearError();
 
       const location = locations.find((item) => item.path === path);
@@ -404,30 +478,118 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setError(toUserError(err, "Could not remove that folder."));
       }
     },
-    [clearError, locations],
+    [clearError, cloudMode, locations],
   );
 
   const rescan = useCallback(async () => {
     clearError();
     setScanning(true);
-    setScanningLabel("Scanning…");
+    setScanningLabel(cloudMode ? "Refreshing cloud library…" : "Scanning…");
 
     try {
-      const nextFiles = await scanLibrary();
-      setFiles(nextFiles);
+      if (cloudMode) {
+        const remoteFiles = await getRemoteFiles();
+        setFiles(remoteFilesToLibraryFiles(remoteFiles));
+        setLocations([]);
+      } else {
+        const nextFiles = await scanLibrary();
+        setFiles(nextFiles);
+      }
     } catch (err) {
-      setError(toUserError(err, "Could not scan your library."));
+      setError(
+        toUserError(
+          err,
+          cloudMode
+            ? "Could not refresh the cloud library."
+            : "Could not scan your library.",
+        ),
+      );
     } finally {
       setScanning(false);
       setScanningLabel(null);
     }
-  }, [clearError]);
+  }, [clearError, cloudMode]);
 
-  const search = useCallback(async (request: LibrarySearchRequest) => {
-    return searchLibraryFiles(request);
-  }, []);
+  const uploadFiles = useCallback(async () => {
+    if (!cloudMode) {
+      setError("Upload is only available while Cloud library is enabled.");
+      return;
+    }
+
+    clearError();
+
+    try {
+      const selected = await open({
+        multiple: true,
+        title: "Upload to cloud library",
+        filters: [
+          {
+            name: "3D models",
+            extensions: ["stl", "3mf", "obj", "step", "stp"],
+          },
+        ],
+      });
+
+      if (selected === null) {
+        return;
+      }
+
+      const paths = Array.isArray(selected) ? selected : [selected];
+      if (paths.length === 0) {
+        return;
+      }
+
+      setUploading(true);
+      setScanningLabel(
+        paths.length === 1
+          ? "Uploading…"
+          : `Uploading 1 of ${paths.length}…`,
+      );
+
+      const errors: string[] = [];
+
+      for (let index = 0; index < paths.length; index += 1) {
+        const path = paths[index];
+        if (!path) {
+          continue;
+        }
+        setScanningLabel(`Uploading ${index + 1} of ${paths.length}…`);
+        try {
+          await uploadRemoteFile(path);
+        } catch (err) {
+          errors.push(toUserError(err, `Could not upload ${path}`));
+        }
+      }
+
+      const remoteFiles = await getRemoteFiles();
+      setFiles(remoteFilesToLibraryFiles(remoteFiles));
+
+      if (errors.length > 0) {
+        setError(
+          errors.length === 1
+            ? (errors[0] ?? "Upload failed.")
+            : `${errors.length} uploads failed. ${errors[0] ?? ""}`,
+        );
+      }
+    } catch (err) {
+      setError(toUserError(err, "Could not upload files."));
+    } finally {
+      setUploading(false);
+      setScanningLabel(null);
+    }
+  }, [clearError, cloudMode]);
 
   const favoriteIdSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+
+  const search = useCallback(
+    async (request: LibrarySearchRequest) => {
+      if (cloudMode) {
+        return filterLibraryFilesLocally(files, request, favoriteIdSet);
+      }
+      return searchLibraryFiles(request);
+    },
+    [cloudMode, favoriteIdSet, files],
+  );
 
   const isFavorite = useCallback(
     (libraryFileId: LibraryFileId) => favoriteIdSet.has(libraryFileId),
@@ -890,14 +1052,17 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       projects,
       fileProjectMap,
       fileNoteMap,
+      cloudMode,
       ready,
       scanning,
       scanningLabel,
+      uploading,
       error,
       clearError,
       addFolder,
       removeFolder,
       rescan,
+      uploadFiles,
       search,
       isFavorite,
       addFavorite,
@@ -940,14 +1105,17 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       projects,
       fileProjectMap,
       fileNoteMap,
+      cloudMode,
       ready,
       scanning,
       scanningLabel,
+      uploading,
       error,
       clearError,
       addFolder,
       removeFolder,
       rescan,
+      uploadFiles,
       search,
       isFavorite,
       addFavorite,

@@ -38,12 +38,15 @@ export function LibraryPage() {
     fileCollectionMap,
     fileProjectMap,
     ready,
+    cloudMode,
     scanning,
     scanningLabel,
+    uploading,
     error,
     clearError,
     addFolder,
     rescan,
+    uploadFiles,
     search,
   } = useLibrary();
 
@@ -224,7 +227,7 @@ export function LibraryPage() {
   }, [isFiltering, search, searchFilters]);
 
   const visibleFolders = useMemo(() => {
-    if (isFiltering) {
+    if (cloudMode || isFiltering) {
       return [];
     }
 
@@ -241,6 +244,7 @@ export function LibraryPage() {
   }, [
     browse.locationPath,
     browse.relativeDir,
+    cloudMode,
     files,
     isFiltering,
     locationFileCounts,
@@ -300,6 +304,10 @@ export function LibraryPage() {
       return sortFiles(liveSearchFiles, sortField, sortDirection);
     }
 
+    if (cloudMode) {
+      return sortFiles(files, sortField, sortDirection);
+    }
+
     if (!browse.locationPath) {
       return [];
     }
@@ -312,6 +320,7 @@ export function LibraryPage() {
   }, [
     browse.locationPath,
     browse.relativeDir,
+    cloudMode,
     files,
     isFiltering,
     liveSearchFiles,
@@ -459,27 +468,202 @@ export function LibraryPage() {
     ? `${visibleFiles.length} result${visibleFiles.length === 1 ? "" : "s"}${
         searchPending ? "…" : ""
       }`
-    : browse.locationPath
-      ? `${visibleFolders.length + visibleFiles.length} item${
-          visibleFolders.length + visibleFiles.length === 1 ? "" : "s"
-        }`
-      : `${locations.length} location${locations.length === 1 ? "" : "s"}`;
+    : cloudMode
+      ? `${visibleFiles.length} model${visibleFiles.length === 1 ? "" : "s"}`
+      : browse.locationPath
+        ? `${visibleFolders.length + visibleFiles.length} item${
+            visibleFolders.length + visibleFiles.length === 1 ? "" : "s"
+          }`
+        : `${locations.length} location${locations.length === 1 ? "" : "s"}`;
 
   const subtitle = scanningLabel
     ? scanningLabel
-    : locations.length === 0
-      ? "Your 3D models and projects"
-      : currentLocation
-        ? `${currentLocation.name} · ${itemCountLabel}`
-        : isFiltering
-          ? itemCountLabel
-          : `${itemCountLabel}`;
+    : cloudMode
+      ? files.length === 0
+        ? "Cloud library"
+        : `Cloud · ${itemCountLabel}`
+      : locations.length === 0
+        ? "Your 3D models and projects"
+        : currentLocation
+          ? `${currentLocation.name} · ${itemCountLabel}`
+          : isFiltering
+            ? itemCountLabel
+            : `${itemCountLabel}`;
 
   if (!ready && scanning) {
     return (
       <section className="page">
-        <PageHeader title="Library" subtitle="Scanning…" />
-        <EmptyState title="Scanning…" description="Looking for 3D files in your folders." />
+        <PageHeader title="Library" subtitle="Loading…" />
+        <EmptyState
+          title={cloudMode ? "Loading cloud library…" : "Scanning…"}
+          description={
+            cloudMode
+              ? "Fetching your catalog from the cloud."
+              : "Looking for 3D files in your folders."
+          }
+        />
+      </section>
+    );
+  }
+
+  if (cloudMode) {
+    const showCloudEmpty =
+      !isFiltering && !searchPending && visibleFiles.length === 0;
+    const showNoSearchResults =
+      isFiltering && !searchPending && visibleFiles.length === 0;
+    const showSearchPending =
+      isFiltering && searchPending && searchResults === null;
+
+    return (
+      <section className="page page--library">
+        <div className="library-top">
+          <PageHeader title="Library" subtitle={subtitle} />
+          <div className="library-toolbar">
+            <label className="library-search">
+              <span className="sr-only">Search models</span>
+              <input
+                type="search"
+                value={draftQuery}
+                onChange={(event) => setDraftQuery(event.target.value)}
+                placeholder="Search models…"
+              />
+            </label>
+
+            <LibraryFiltersPanel
+              filters={filters}
+              tags={tags}
+              collections={collections}
+              projects={projects}
+              onChange={setFilters}
+            />
+
+            <label className="library-sort">
+              <span className="library-sort__label">Sort</span>
+              <select
+                value={sortField}
+                onChange={(event) => setSortField(event.target.value as SortField)}
+              >
+                <option value="name">Name</option>
+                <option value="modifiedAt">Date modified</option>
+                <option value="size">Size</option>
+                <option value="type">Type</option>
+              </select>
+            </label>
+
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() =>
+                setSortDirection((current) => (current === "asc" ? "desc" : "asc"))
+              }
+              aria-label={
+                sortDirection === "asc" ? "Sort descending" : "Sort ascending"
+              }
+              title={sortDirection === "asc" ? "Ascending" : "Descending"}
+            >
+              {sortDirection === "asc" ? "Asc" : "Desc"}
+            </button>
+
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => void rescan()}
+              disabled={scanning || uploading}
+            >
+              {scanning ? "Refreshing…" : "Refresh"}
+            </button>
+
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => void uploadFiles()}
+              disabled={uploading || scanning}
+            >
+              {uploading ? "Uploading…" : "Upload"}
+            </button>
+          </div>
+        </div>
+
+        {error ? <ErrorBanner message={error} onDismiss={clearError} /> : null}
+
+        {activeFilterChips.length > 0 ? (
+          <div className="library-active-filters" aria-label="Active filters">
+            <span className="library-active-filters__label">Active:</span>
+            <div className="library-active-filters__chips">
+              {activeFilterChips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  className="library-active-filters__chip"
+                  onClick={chip.onRemove}
+                  title={`Remove ${chip.label}`}
+                >
+                  {chip.label}
+                  <span aria-hidden="true">×</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                className="button button--ghost library-active-filters__clear"
+                onClick={clearAllFilters}
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {showCloudEmpty ? (
+          <EmptyState
+            title="Your cloud library is empty"
+            description="Upload STL, 3MF, OBJ, or STEP files to get started."
+            action={
+              <button
+                type="button"
+                className="button button--primary"
+                disabled={uploading}
+                onClick={() => void uploadFiles()}
+              >
+                {uploading ? "Uploading…" : "Upload models"}
+              </button>
+            }
+          />
+        ) : null}
+
+        {showSearchPending ? (
+          <EmptyState
+            title="Searching…"
+            description="Looking for models that match your search and filters."
+          />
+        ) : null}
+
+        {showNoSearchResults ? (
+          <EmptyState
+            title="No models found"
+            description="Try adjusting your search or filters."
+            action={
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={clearSearchAndFilters}
+              >
+                Clear filters
+              </button>
+            }
+          />
+        ) : null}
+
+        {!showCloudEmpty && !showNoSearchResults && !showSearchPending ? (
+          <div
+            className={`library-grid${
+              isFiltering && searchPending ? " library-grid--pending" : ""
+            }`}
+          >
+            {visibleFiles.map((file) => (
+              <FileCard key={file.libraryFileId} file={file} />
+            ))}
+          </div>
+        ) : null}
       </section>
     );
   }

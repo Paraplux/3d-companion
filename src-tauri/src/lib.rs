@@ -1,5 +1,6 @@
 mod database;
 mod library;
+mod remote;
 mod repositories;
 
 use database::Database;
@@ -16,6 +17,10 @@ use library::{
     remove_file_from_project, remove_file_tag, remove_library_location, rename_collection,
     rename_tag, scan_library, scan_library_location, search_library_files, update_project,
     upsert_file_note, LibraryState,
+};
+use remote::{
+    get_remote_config, get_remote_files, get_remote_library, put_remote_library, save_remote_config,
+    test_remote_connection, upload_remote_file,
 };
 use tauri::Manager;
 
@@ -83,6 +88,13 @@ pub fn run() {
             delete_file_note,
             get_noted_file_ids,
             get_all_file_notes,
+            get_remote_config,
+            save_remote_config,
+            test_remote_connection,
+            get_remote_files,
+            get_remote_library,
+            put_remote_library,
+            upload_remote_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

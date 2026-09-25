@@ -1,7 +1,9 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { CloudConnectionSection } from "@/components/settings/CloudConnectionSection";
 import { TagsSettingsSection } from "@/components/library/TagsSettingsSection";
 import { useLibrary } from "@/hooks/useLibrary";
+import { useRemoteConfig } from "@/hooks/useRemoteConfig";
 import { useTheme } from "@/hooks/useTheme";
 import type { ThemePreference } from "@/types/theme";
 
@@ -16,7 +18,10 @@ const themeOptions = [
 
 export function SettingsPage() {
   const { preference, setPreference } = useTheme();
-  const { locations, error, clearError, addFolder, removeFolder } = useLibrary();
+  const { locations, error, clearError, addFolder, removeFolder, cloudMode } =
+    useLibrary();
+  const remote = useRemoteConfig();
+  const localFoldersDisabled = cloudMode || remote.draft.enabled;
 
   return (
     <section className="page">
@@ -39,25 +44,34 @@ export function SettingsPage() {
           />
         </section>
 
-        <section className="settings-block">
+        <CloudConnectionSection remote={remote} />
+
+        <section
+          className={`settings-block${
+            localFoldersDisabled ? " settings-block--disabled" : ""
+          }`}
+          aria-disabled={localFoldersDisabled}
+        >
           <div className="settings-block__header">
             <div>
               <h2 className="settings-section__title">Library locations</h2>
               <p className="settings-section__description">
-                Folders scanned for STL, 3MF, OBJ, and STEP files. Removing a
-                folder never deletes files from disk.
+                {localFoldersDisabled
+                  ? "Local folders are disabled while Cloud library is enabled. Turn off Cloud library to manage folders on this Mac."
+                  : "Local folders scanned for STL, 3MF, OBJ, and STEP files. Removing a folder never deletes files from disk."}
               </p>
             </div>
             <button
               type="button"
               className="button button--primary"
+              disabled={localFoldersDisabled}
               onClick={() => void addFolder()}
             >
               Add folder
             </button>
           </div>
 
-          {error ? (
+          {error && !localFoldersDisabled ? (
             <div className="banner banner--error" role="alert">
               <p>{error}</p>
               <button type="button" className="banner__dismiss" onClick={clearError}>
@@ -67,7 +81,11 @@ export function SettingsPage() {
           ) : null}
 
           {locations.length === 0 ? (
-            <p className="settings-empty">No folders added yet.</p>
+            <p className="settings-empty">
+              {localFoldersDisabled
+                ? "Using cloud catalog only."
+                : "No folders added yet."}
+            </p>
           ) : (
             <ul className="location-list">
               {locations.map((location) => (
@@ -90,6 +108,7 @@ export function SettingsPage() {
                     type="button"
                     className="button button--ghost location-list__remove"
                     aria-label={`Remove ${location.name}`}
+                    disabled={localFoldersDisabled}
                     onClick={() => void removeFolder(location.path)}
                   >
                     −
