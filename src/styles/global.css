@@ -2319,6 +2319,34 @@ a:focus-visible {
   color: var(--danger, #c23b3b);
 }
 
+.sync-remote {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.sync-remote__error {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 12;
+  width: max-content;
+  max-width: min(18rem, 70vw);
+  padding: 0.5rem 0.65rem;
+  color: var(--text);
+  font-size: 0.78rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+}
+
+.sync-remote__error p {
+  margin: 0;
+  color: var(--danger, #c23b3b);
+}
+
 .model-viewer__reset {
   padding-inline: 0.65rem;
 }

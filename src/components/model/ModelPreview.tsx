@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { DownloadRemoteFileButton } from "@/components/model/DownloadRemoteFileButton";
 import { ModelViewerPlaceholder } from "@/components/model/ModelViewerPlaceholder";
 import { OpenInBambuStudioButton } from "@/components/model/OpenInBambuStudioButton";
+import { SyncRemoteFileButton } from "@/components/model/SyncRemoteFileButton";
 import { PlateSelector } from "@/components/model/viewer/PlateSelector";
 import { useLibrary } from "@/hooks/useLibrary";
 import { canOpenInBambuStudio } from "@/lib/bambuStudio";
@@ -214,6 +215,7 @@ export function ModelPreview({ file }: ModelPreviewProps) {
             ) : null}
 
             {isRemote ? <DownloadRemoteFileButton file={file} /> : null}
+            {isRemote ? <SyncRemoteFileButton file={file} /> : null}
             {canOpenBambu ? <OpenInBambuStudioButton file={file} /> : null}
 
             {canPreview3d(file.extension) ? (

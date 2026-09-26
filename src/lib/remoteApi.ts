@@ -50,6 +50,19 @@ export function uploadRemoteFile(path: string): Promise<RemoteIngestResult> {
   return invoke("upload_remote_file", { path });
 }
 
+/**
+ * Push the local cache (edited in Bambu, etc.) back to the cloud.
+ * Same fileId — projects/tags/notes stay valid. Returns updated hash/size.
+ * When `deduplicated` is true, cache already matched cloud (nothing uploaded).
+ */
+export function replaceRemoteFile(
+  fileId: string,
+  contentHash: string,
+  filename: string,
+): Promise<RemoteIngestResult> {
+  return invoke("replace_remote_file", { fileId, contentHash, filename });
+}
+
 /** Soft-delete on the gateway (`files/{id}/` → `.trash/`). */
 export function deleteRemoteFile(fileId: string): Promise<void> {
   return invoke("delete_remote_file", { fileId });

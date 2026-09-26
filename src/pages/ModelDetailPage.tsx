@@ -316,8 +316,9 @@ export function ModelDetailPage() {
         ) : null}
         {isRemote ? (
           <p className="model-detail__status" role="status">
-            Stored in the cloud. Previews download on open; View 3D builds a
-            local mesh cache on first use.
+            Stored in the cloud. Open in Bambu to edit the local cache, then
+            Sync to cloud to push a new version (same file, projects stay
+            linked).
           </p>
         ) : null}
         {file.analysisStatus === "error" && !isRemote ? (

@@ -82,6 +82,7 @@ import {
   putRemoteLibrary,
   REMOTE_CONFIG_CHANGED_EVENT,
   renameRemoteFile,
+  replaceRemoteFile,
   uploadRemoteFile,
 } from "@/lib/remoteApi";
 import { remoteFileToLibraryFile, remoteFilesToLibraryFiles } from "@/lib/remoteFiles";
@@ -130,6 +131,14 @@ type LibraryContextValue = {
     libraryFileId: LibraryFileId,
     name: string,
   ) => Promise<LibraryFile>;
+  /**
+   * Push the local download-cache bytes back to the cloud (`PUT` replace).
+   * Keeps the same fileId. Clears ephemeral analysis so plates re-hydrate.
+   */
+  replaceCloudFile: (libraryFileId: LibraryFileId) => Promise<{
+    file: LibraryFile;
+    unchanged: boolean;
+  }>;
   /** Patch in-memory library file fields (e.g. remote cache analysis). */
   patchLibraryFile: (
     libraryFileId: LibraryFileId,
@@ -791,6 +800,63 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         return mapped;
       } catch (err) {
         setError(toUserError(err, "Could not rename that file."));
+        throw err;
+      }
+    },
+    [clearError, cloudMode, files],
+  );
+
+  const replaceCloudFile = useCallback(
+    async (
+      libraryFileId: LibraryFileId,
+    ): Promise<{ file: LibraryFile; unchanged: boolean }> => {
+      if (!cloudMode) {
+        const message =
+          "Sync to cloud is only available while Cloud library is enabled.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      const previous = files.find(
+        (entry) => entry.libraryFileId === libraryFileId,
+      );
+      if (!previous) {
+        const message = "That file is no longer in the library.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      clearError();
+      try {
+        const result = await replaceRemoteFile(
+          libraryFileId,
+          previous.contentHash,
+          previous.name,
+        );
+        const unchanged =
+          result.deduplicated && result.contentHash === previous.contentHash;
+        const mapped: LibraryFile = {
+          ...previous,
+          contentHash: result.contentHash,
+          size: result.size,
+          name: result.name || previous.name,
+          modifiedAt: Date.now(),
+          // Force plate / mesh re-prep for the new bytes.
+          threemf: undefined,
+          stl: undefined,
+          // Server regenerates thumbnails on replace — drop stale flag so UI refetches.
+          hasRemoteThumbnail: unchanged
+            ? previous.hasRemoteThumbnail
+            : true,
+        };
+        setFiles((current) =>
+          current.map((entry) =>
+            entry.libraryFileId === libraryFileId ? mapped : entry,
+          ),
+        );
+        return { file: mapped, unchanged };
+      } catch (err) {
+        setError(toUserError(err, "Could not sync that file to the cloud."));
         throw err;
       }
     },
@@ -1468,6 +1534,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       uploadFiles,
       deleteCloudFile,
       renameCloudFile,
+      replaceCloudFile,
       patchLibraryFile,
       search,
       isFavorite,
@@ -1524,6 +1591,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       uploadFiles,
       deleteCloudFile,
       renameCloudFile,
+      replaceCloudFile,
       patchLibraryFile,
       search,
       isFavorite,

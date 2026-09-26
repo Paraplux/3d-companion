@@ -429,6 +429,73 @@ pub async fn upload_file(
         .map_err(|error| format!("Could not parse upload response: {error}"))
 }
 
+/// Replace an existing catalog object with new bytes (`PUT /v1/files/{id}`).
+/// Keeps the same `fileId` (projects / tags / notes stay valid); updates content hash.
+pub async fn replace_file(
+    config: &RemoteConfig,
+    file_id: &str,
+    path: &Path,
+) -> Result<RemoteIngestResult, String> {
+    ensure_ready(config)?;
+    validate_file_id(file_id)?;
+
+    if !path.is_file() {
+        return Err("Cached file is missing. Open or download it first.".into());
+    }
+
+    let filename = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Could not read file name.".to_string())?
+        .to_string();
+
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|error| format!("Could not read file: {error}"))?;
+
+    let size = bytes.len() as u64;
+    let max_bytes: u64 = 512 * 1024 * 1024;
+    if size > max_bytes {
+        return Err("File is larger than the 512 MB upload limit.".into());
+    }
+
+    let client = http_client()?;
+    let part = reqwest::multipart::Part::bytes(bytes)
+        .file_name(filename.clone())
+        .mime_str("application/octet-stream")
+        .map_err(|error| format!("Could not build upload part: {error}"))?;
+
+    let form = reqwest::multipart::Form::new()
+        .part("file", part)
+        .text("filename", filename);
+
+    let response = client
+        .put(config.v1_url(&format!("files/{file_id}"))?)
+        .headers(auth_headers(&config.api_key)?)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|error| format!("Replace failed: {error}"))?;
+
+    let status = response.status();
+    if status.as_u16() == 404 {
+        return Err("That cloud file no longer exists.".into());
+    }
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Replace failed (HTTP {}). {}",
+            status.as_u16(),
+            truncate(&body, 160)
+        ));
+    }
+
+    response
+        .json::<RemoteIngestResult>()
+        .await
+        .map_err(|error| format!("Could not parse replace response: {error}"))
+}
+
 /// Download a remote thumbnail into `cache_dir`, returning the local file path.
 /// Idempotent when the cached file already exists.
 pub async fn download_thumbnail(

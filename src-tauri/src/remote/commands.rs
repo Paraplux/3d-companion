@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager};
 
 use super::client::{
     delete_file, download_file_to_path, download_thumbnail, ensure_cached_file, find_cached_file,
-    get_library, list_files, put_library, rename_file, test_connection, upload_file,
+    get_library, list_files, put_library, rename_file, replace_file, test_connection, upload_file,
     RemoteConnectionTestResult, RemoteFileSummary, RemoteIngestResult, RemoteLibraryResponse,
 };
 use super::config::{load_config, save_config, RemoteConfig};
@@ -16,6 +16,7 @@ use crate::library::geometry::{geometry_cache_dir, load_model_geometry};
 use crate::library::models::{
     AnalysisStatus, LibraryFile, StlMetadata, ThreeMfMetadata,
 };
+use crate::library::util::hash_file;
 
 fn remote_files_cache_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(app
@@ -106,6 +107,86 @@ pub async fn put_remote_library(
 pub async fn upload_remote_file(app: AppHandle, path: String) -> Result<RemoteIngestResult, String> {
     let config = load_config(&app)?;
     upload_file(&config, std::path::Path::new(&path)).await
+}
+
+/// Push the locally cached (possibly Bambu-edited) bytes back to the cloud.
+/// Uses `PUT /v1/files/{id}` so `fileId` / library relations stay stable.
+#[tauri::command]
+pub async fn replace_remote_file(
+    app: AppHandle,
+    file_id: String,
+    content_hash: String,
+    filename: String,
+) -> Result<RemoteIngestResult, String> {
+    let config = load_config(&app)?;
+    let cache_dir = remote_files_cache_dir(&app)?;
+    let Some(path) = find_cached_file(
+        &file_id,
+        &content_hash,
+        &filename,
+        &cache_dir,
+        config.cache_ttl_days,
+    )?
+    else {
+        return Err(
+            "No local cache for this file. Open it in Bambu Studio (or download it) first, edit, then sync."
+                .into(),
+        );
+    };
+
+    let local_hash = hash_file(&path)?;
+    if local_hash == content_hash.trim() {
+        // Cache still matches cloud — nothing to push.
+        let meta = tokio::fs::metadata(&path)
+            .await
+            .map_err(|error| format!("Could not read cached file: {error}"))?;
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        return Ok(RemoteIngestResult {
+            id: file_id,
+            name: filename,
+            extension,
+            size: meta.len() as i64,
+            content_hash: local_hash,
+            deduplicated: true,
+        });
+    }
+
+    let result = replace_file(&config, &file_id, &path).await?;
+
+    // Remap cache folder to the new content hash so the edited bytes stay addressable.
+    let new_hash = result.content_hash.trim();
+    if !new_hash.is_empty() && new_hash != content_hash.trim() {
+        let safe_name = path
+            .file_name()
+            .ok_or_else(|| "Could not read cached file name.".to_string())?;
+        let new_dir = cache_dir.join(&file_id).join(new_hash);
+        std::fs::create_dir_all(&new_dir)
+            .map_err(|error| format!("Could not create updated cache folder: {error}"))?;
+        let new_path = new_dir.join(safe_name);
+        if path != new_path {
+            std::fs::rename(&path, &new_path).or_else(|_| {
+                std::fs::copy(&path, &new_path).and_then(|_| std::fs::remove_file(&path))
+            }).map_err(|error| format!("Could not update local cache path: {error}"))?;
+        }
+        // Drop the old hash directory when empty.
+        if let Some(old_dir) = path.parent() {
+            let _ = std::fs::remove_dir(old_dir);
+        }
+    }
+
+    // Thumbnail is keyed by file id — force a fresh download after replace.
+    if let Ok(thumbs) = thumbnails_dir(&app) {
+        for ext in ["webp", "png", "jpg", "jpeg"] {
+            let stale = thumbs.join(format!("{file_id}.{ext}"));
+            let _ = std::fs::remove_file(stale);
+        }
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]
