@@ -3,8 +3,10 @@ import { DownloadRemoteFileButton } from "@/components/model/DownloadRemoteFileB
 import { ModelViewerPlaceholder } from "@/components/model/ModelViewerPlaceholder";
 import { OpenInBambuStudioButton } from "@/components/model/OpenInBambuStudioButton";
 import { PlateSelector } from "@/components/model/viewer/PlateSelector";
+import { useLibrary } from "@/hooks/useLibrary";
 import { canOpenInBambuStudio } from "@/lib/bambuStudio";
 import { getModelGeometry } from "@/lib/libraryApi";
+import { prepareRemoteFilePreview } from "@/lib/remoteApi";
 import { isRemoteLibraryFile } from "@/lib/remoteFiles";
 import type { LibraryFile } from "@/types/library";
 
@@ -31,21 +33,79 @@ function firstPlateId(file: LibraryFile): string | null {
 }
 
 export function ModelPreview({ file }: ModelPreviewProps) {
+  const { patchLibraryFile } = useLibrary();
   const plates = file.threemf?.project?.plates ?? [];
   const initialPlateId = useMemo(() => firstPlateId(file), [file]);
   const isRemote = isRemoteLibraryFile(file);
   const previewable = canPreview3d(file.extension) && !isRemote;
   const canOpenBambu = canOpenInBambuStudio(file);
+  const needsRemotePlateAnalysis =
+    isRemote &&
+    file.extension.toLowerCase() === "3mf" &&
+    !file.threemf?.project?.plates?.length;
 
   const [selectedPlateId, setSelectedPlateId] = useState<string | null>(initialPlateId);
   const [viewerActive, setViewerActive] = useState(false);
   const [cameraReset, setCameraReset] = useState(0);
+  const [platePhase, setPlatePhase] = useState<"idle" | "downloading" | "analyzing">(
+    "idle",
+  );
 
   useEffect(() => {
     setSelectedPlateId(initialPlateId);
     setViewerActive(false);
     setCameraReset(0);
   }, [file.libraryFileId, initialPlateId]);
+
+  // Cache (download if needed) + analyze cloud 3MF so plate previews work without Bambu.
+  useEffect(() => {
+    if (!needsRemotePlateAnalysis) {
+      return;
+    }
+
+    let cancelled = false;
+    setPlatePhase("downloading");
+
+    void prepareRemoteFilePreview(
+      file.libraryFileId,
+      file.contentHash,
+      file.name,
+      file.extension,
+    )
+      .then((result) => {
+        if (cancelled || !result.available) {
+          return;
+        }
+        setPlatePhase("analyzing");
+        patchLibraryFile(file.libraryFileId, {
+          threemf: result.threemf,
+          stl: result.stl,
+          analysisStatus: "ready",
+          ...(result.thumbnailPath
+            ? { thumbnailPath: result.thumbnailPath }
+            : {}),
+        });
+      })
+      .catch(() => {
+        // Keep cloud thumbnail only.
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPlatePhase("idle");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    file.contentHash,
+    file.extension,
+    file.libraryFileId,
+    file.name,
+    needsRemotePlateAnalysis,
+    patchLibraryFile,
+  ]);
 
   // Prefetch only after the user opens the viewer; then warm the next plate.
   useEffect(() => {
@@ -92,9 +152,11 @@ export function ModelPreview({ file }: ModelPreviewProps) {
 
   const showToolbar =
     plates.length > 1 || previewable || canOpenBambu || isRemote;
+  const plateHydrating = platePhase !== "idle";
   const analyzing =
-    !isRemote &&
-    (file.analysisStatus === "pending" || file.analysisStatus === "analyzing");
+    (!isRemote &&
+      (file.analysisStatus === "pending" || file.analysisStatus === "analyzing")) ||
+    plateHydrating;
 
   return (
     <div className="model-viewer">
@@ -121,7 +183,11 @@ export function ModelPreview({ file }: ModelPreviewProps) {
 
       {analyzing && !viewerActive ? (
         <p className="model-viewer__analysis-hint" role="status">
-          Analyzing model… preview will update when ready.
+          {platePhase === "downloading"
+            ? "Downloading model for plate previews…"
+            : platePhase === "analyzing"
+              ? "Reading plate previews…"
+              : "Analyzing model… preview will update when ready."}
         </p>
       ) : null}
 

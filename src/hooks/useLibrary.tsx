@@ -130,6 +130,11 @@ type LibraryContextValue = {
     libraryFileId: LibraryFileId,
     name: string,
   ) => Promise<LibraryFile>;
+  /** Patch in-memory library file fields (e.g. remote cache analysis). */
+  patchLibraryFile: (
+    libraryFileId: LibraryFileId,
+    patch: Partial<LibraryFile>,
+  ) => void;
   search: (request: LibrarySearchRequest) => Promise<LibraryFile[]>;
   isFavorite: (libraryFileId: LibraryFileId) => boolean;
   addFavorite: (libraryFileId: LibraryFileId) => Promise<void>;
@@ -792,6 +797,17 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [clearError, cloudMode, files],
   );
 
+  const patchLibraryFile = useCallback(
+    (libraryFileId: LibraryFileId, patch: Partial<LibraryFile>) => {
+      setFiles((current) =>
+        current.map((entry) =>
+          entry.libraryFileId === libraryFileId ? { ...entry, ...patch } : entry,
+        ),
+      );
+    },
+    [],
+  );
+
   const favoriteIdSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
 
   const search = useCallback(
@@ -1452,6 +1468,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       uploadFiles,
       deleteCloudFile,
       renameCloudFile,
+      patchLibraryFile,
       search,
       isFavorite,
       addFavorite,
@@ -1507,6 +1524,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       uploadFiles,
       deleteCloudFile,
       renameCloudFile,
+      patchLibraryFile,
       search,
       isFavorite,
       addFavorite,

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { StlMetadata, ThreeMfMetadata } from "@/types/library";
 import type {
   RemoteConfig,
   RemoteConnectionTestResult,
@@ -83,6 +84,43 @@ export function openRemoteInBambuStudio(
   extension: string,
 ): Promise<void> {
   return invoke("open_remote_in_bambu_studio", {
+    fileId,
+    contentHash,
+    filename,
+    extension,
+  });
+}
+
+export type CachedRemoteAnalysis = {
+  available: boolean;
+  threemf?: ThreeMfMetadata;
+  stl?: StlMetadata;
+  thumbnailPath?: string;
+};
+
+/** Analyze a cloud file only when already present in the local download cache. */
+export function analyzeCachedRemoteFile(
+  fileId: string,
+  contentHash: string,
+  filename: string,
+  extension: string,
+): Promise<CachedRemoteAnalysis> {
+  return invoke("analyze_cached_remote_file", {
+    fileId,
+    contentHash,
+    filename,
+    extension,
+  });
+}
+
+/** Download into cache if needed, then analyze (plates / metadata). */
+export function prepareRemoteFilePreview(
+  fileId: string,
+  contentHash: string,
+  filename: string,
+  extension: string,
+): Promise<CachedRemoteAnalysis> {
+  return invoke("prepare_remote_file_preview", {
     fileId,
     contentHash,
     filename,

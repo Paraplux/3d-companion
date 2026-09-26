@@ -1,15 +1,18 @@
+use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use super::client::{
-    delete_file, download_file_to_path, download_thumbnail, ensure_cached_file, get_library,
-    list_files, put_library, rename_file, test_connection, upload_file,
+    delete_file, download_file_to_path, download_thumbnail, ensure_cached_file, find_cached_file,
+    get_library, list_files, put_library, rename_file, test_connection, upload_file,
     RemoteConnectionTestResult, RemoteFileSummary, RemoteIngestResult, RemoteLibraryResponse,
 };
 use super::config::{load_config, save_config, RemoteConfig};
+use crate::library::analysis::{analyze_file, resolve_threemf_paths, thumbnail_absolute};
 use crate::library::bambu_studio::{
     is_bambu_studio_compatible_extension, open_path_in_bambu_studio,
 };
+use crate::library::models::{StlMetadata, ThreeMfMetadata};
 
 fn remote_files_cache_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(app
@@ -17,6 +20,30 @@ fn remote_files_cache_dir(app: &AppHandle) -> Result<std::path::PathBuf, String>
         .app_data_dir()
         .map_err(|error| format!("Could not resolve app data dir: {error}"))?
         .join("remote-files"))
+}
+
+fn thumbnails_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve app data dir: {error}"))?
+        .join("thumbnails");
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("Could not create thumbnails directory: {error}"))?;
+    Ok(dir)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CachedRemoteAnalysis {
+    /// False when the object is not present in the local download cache.
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threemf: Option<ThreeMfMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stl: Option<StlMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thumbnail_path: Option<String>,
 }
 
 #[tauri::command]
@@ -153,4 +180,86 @@ pub async fn open_remote_in_bambu_studio(
     let path =
         ensure_cached_file(&config, &file_id, &content_hash, &filename, &cache_dir).await?;
     open_path_in_bambu_studio(&path)
+}
+
+/// Analyze a cloud object **only if** it is already in the local download cache.
+/// Used for plate previews without forcing a download.
+#[tauri::command]
+pub async fn analyze_cached_remote_file(
+    app: AppHandle,
+    file_id: String,
+    content_hash: String,
+    filename: String,
+    extension: String,
+) -> Result<CachedRemoteAnalysis, String> {
+    let config = load_config(&app)?;
+    let cache_dir = remote_files_cache_dir(&app)?;
+    let Some(path) = find_cached_file(
+        &file_id,
+        &content_hash,
+        &filename,
+        &cache_dir,
+        config.cache_ttl_days,
+    )?
+    else {
+        return Ok(CachedRemoteAnalysis {
+            available: false,
+            threemf: None,
+            stl: None,
+            thumbnail_path: None,
+        });
+    };
+
+    analyze_path_blocking(app, path, content_hash, extension).await
+}
+
+/// Ensure the cloud object is cached, then analyze it (plates / metadata).
+#[tauri::command]
+pub async fn prepare_remote_file_preview(
+    app: AppHandle,
+    file_id: String,
+    content_hash: String,
+    filename: String,
+    extension: String,
+) -> Result<CachedRemoteAnalysis, String> {
+    let config = load_config(&app)?;
+    let cache_dir = remote_files_cache_dir(&app)?;
+    let path =
+        ensure_cached_file(&config, &file_id, &content_hash, &filename, &cache_dir).await?;
+    analyze_path_blocking(app, path, content_hash, extension).await
+}
+
+async fn analyze_path_blocking(
+    app: AppHandle,
+    path: std::path::PathBuf,
+    content_hash: String,
+    extension: String,
+) -> Result<CachedRemoteAnalysis, String> {
+    let thumbs = thumbnails_dir(&app)?;
+    let ext = extension.clone();
+    let hash = content_hash.clone();
+    let path_for_job = path;
+    let thumbs_for_job = thumbs.clone();
+
+    let outcome = tokio::task::spawn_blocking(move || {
+        analyze_file(&path_for_job, &ext, &hash, &thumbs_for_job)
+    })
+    .await
+    .map_err(|error| format!("Analysis task failed: {error}"))??;
+
+    let threemf = outcome
+        .payload
+        .threemf
+        .map(|meta| resolve_threemf_paths(meta, &thumbs));
+    let thumbnail_path = outcome
+        .thumbnail_relpath
+        .as_ref()
+        .map(|rel| thumbnail_absolute(&thumbs, rel).to_string_lossy().into_owned());
+
+    Ok(CachedRemoteAnalysis {
+        available: true,
+        threemf,
+        stl: outcome.payload.stl,
+        thumbnail_path,
+    })
 }

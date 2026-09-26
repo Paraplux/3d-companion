@@ -29,11 +29,13 @@ export function ModelViewerPlaceholder({
   plateId,
 }: ModelViewerPlaceholderProps) {
   const isRemote = isRemoteLibraryFile(file);
-  const remoteSrc = useRemoteThumbnailSrc(
-    file.libraryFileId,
-    Boolean(isRemote && file.hasRemoteThumbnail),
+  const localSrc = resolveLocalPreviewSrc(file, plateId);
+  // Prefer plate / local analysis thumbs when available; fall back to cloud thumb.
+  const wantRemoteThumb = Boolean(
+    isRemote && file.hasRemoteThumbnail && !localSrc,
   );
-  const previewSrc = remoteSrc ?? resolveLocalPreviewSrc(file, plateId);
+  const remoteSrc = useRemoteThumbnailSrc(file.libraryFileId, wantRemoteThumb);
+  const previewSrc = localSrc ?? remoteSrc;
 
   return (
     <div className="model-viewer-placeholder" aria-label="Model preview">

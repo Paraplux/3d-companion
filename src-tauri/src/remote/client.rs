@@ -501,6 +501,31 @@ pub async fn download_thumbnail(
     Ok(path)
 }
 
+/// Look up a cached catalog object without downloading.
+/// Returns `None` when missing or expired.
+pub fn find_cached_file(
+    file_id: &str,
+    content_hash: &str,
+    filename: &str,
+    cache_root: &Path,
+    ttl_days: u32,
+) -> Result<Option<std::path::PathBuf>, String> {
+    validate_file_id(file_id)?;
+    let hash = content_hash.trim();
+    if hash.is_empty() {
+        return Err("Missing content hash for cache key.".into());
+    }
+    let safe_name = sanitize_cache_filename(filename)?;
+    let path = cache_root.join(file_id).join(hash).join(&safe_name);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    if cache_entry_expired(&path, ttl_days)? {
+        return Ok(None);
+    }
+    Ok(Some(path))
+}
+
 /// Download a catalog object into the local cache (keyed by id + content hash).
 /// Returns the absolute path. Respects `cache_ttl_days` for eviction of stale hits.
 pub async fn ensure_cached_file(
