@@ -279,6 +279,54 @@ export function getModelGeometry(
   return request;
 }
 
+/** Local or remote geometry — routes to the right Tauri command. */
+export function getModelGeometryForFile(
+  file: LibraryFile,
+  plateId?: string | null,
+): Promise<ModelGeometryResponse> {
+  const key = geometryCacheKey(file.libraryFileId, plateId, file.contentHash);
+  const cached = geometryResults.get(key);
+  if (cached) {
+    rememberGeometry(key, cached);
+    return Promise.resolve(cached);
+  }
+
+  const pending = geometryRequests.get(key);
+  if (pending) {
+    return pending;
+  }
+
+  const isRemote = file.locationPath === "remote://cloud";
+  const request = (
+    isRemote
+      ? invoke<ModelGeometryResponse>("get_remote_model_geometry", {
+          fileId: file.libraryFileId,
+          contentHash: file.contentHash,
+          filename: file.name,
+          extension: file.extension,
+          plateId: plateId ?? null,
+          threemf: file.threemf ?? null,
+          stl: file.stl ?? null,
+        })
+      : invoke<ModelGeometryResponse>("get_model_geometry", {
+          libraryFileId: file.libraryFileId,
+          plateId: plateId ?? null,
+        })
+  )
+    .then((data) => {
+      rememberGeometry(key, data);
+      geometryRequests.delete(key);
+      return data;
+    })
+    .catch((error) => {
+      geometryRequests.delete(key);
+      throw error;
+    });
+
+  geometryRequests.set(key, request);
+  return request;
+}
+
 export function clearModelGeometryCache(): void {
   geometryResults.clear();
   geometryRequests.clear();

@@ -316,8 +316,8 @@ export function ModelDetailPage() {
         ) : null}
         {isRemote ? (
           <p className="model-detail__status" role="status">
-            Stored in the cloud. Plate previews download automatically on open;
-            Bambu Studio reuses the same local cache.
+            Stored in the cloud. Previews download on open; View 3D builds a
+            local mesh cache on first use.
           </p>
         ) : null}
         {file.analysisStatus === "error" && !isRemote ? (

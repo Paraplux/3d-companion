@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { getCachedModelGeometry, getModelGeometry, toUserError } from "@/lib/libraryApi";
+import {
+  getCachedModelGeometry,
+  getModelGeometryForFile,
+  toUserError,
+} from "@/lib/libraryApi";
 import type { ModelGeometryResponse } from "@/types/geometry";
 import type { LibraryFile } from "@/types/library";
 
@@ -56,7 +60,7 @@ export function useModelGeometry(file: LibraryFile | null, plateId: string | nul
         : { status: "loading" };
     });
 
-    void getModelGeometry(file.libraryFileId, plateId, file.contentHash)
+    void getModelGeometryForFile(file, plateId)
       .then((data) => {
         if (!cancelled) {
           setState({ status: "ready", data });
@@ -80,7 +84,14 @@ export function useModelGeometry(file: LibraryFile | null, plateId: string | nul
     return () => {
       cancelled = true;
     };
-  }, [canLoad, file?.contentHash, file?.libraryFileId, plateId]);
+  }, [
+    canLoad,
+    file,
+    file?.contentHash,
+    file?.libraryFileId,
+    file?.threemf,
+    plateId,
+  ]);
 
   return { state, canLoad };
 }

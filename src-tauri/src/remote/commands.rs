@@ -12,7 +12,10 @@ use crate::library::analysis::{analyze_file, resolve_threemf_paths, thumbnail_ab
 use crate::library::bambu_studio::{
     is_bambu_studio_compatible_extension, open_path_in_bambu_studio,
 };
-use crate::library::models::{StlMetadata, ThreeMfMetadata};
+use crate::library::geometry::{geometry_cache_dir, load_model_geometry};
+use crate::library::models::{
+    AnalysisStatus, LibraryFile, StlMetadata, ThreeMfMetadata,
+};
 
 fn remote_files_cache_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(app
@@ -262,4 +265,68 @@ async fn analyze_path_blocking(
         stl: outcome.payload.stl,
         thumbnail_path,
     })
+}
+
+/// Cache a cloud STL/3MF if needed, then extract geometry for the 3D viewer.
+/// Geometry triangle soups are stored under the shared geometry disk cache (by contentHash).
+#[tauri::command]
+pub async fn get_remote_model_geometry(
+    app: AppHandle,
+    file_id: String,
+    content_hash: String,
+    filename: String,
+    extension: String,
+    plate_id: Option<String>,
+    threemf: Option<ThreeMfMetadata>,
+    stl: Option<StlMetadata>,
+) -> Result<crate::library::geometry::ModelGeometryResponse, String> {
+    let ext = extension.trim().to_ascii_lowercase();
+    if ext != "stl" && ext != "3mf" {
+        return Err(format!("3D preview unavailable for {ext} files."));
+    }
+
+    let config = load_config(&app)?;
+    let cache_dir = remote_files_cache_dir(&app)?;
+    let path =
+        ensure_cached_file(&config, &file_id, &content_hash, &filename, &cache_dir).await?;
+
+    let mut meta_threemf = threemf;
+    let mut meta_stl = stl;
+    if ext == "3mf" && meta_threemf.is_none() {
+        let analyzed =
+            analyze_path_blocking(app.clone(), path.clone(), content_hash.clone(), extension.clone())
+                .await?;
+        meta_threemf = analyzed.threemf;
+        meta_stl = analyzed.stl.or(meta_stl);
+    }
+
+    let file = LibraryFile {
+        library_file_id: file_id,
+        content_hash: content_hash.clone(),
+        path: path.to_string_lossy().into_owned(),
+        name: filename,
+        extension: ext,
+        size: std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0),
+        modified_at: 0,
+        relative_path: String::new(),
+        location_path: "remote://cloud".into(),
+        analysis_status: AnalysisStatus::Ready,
+        analysis_error: None,
+        thumbnail_path: None,
+        stl: meta_stl,
+        threemf: meta_threemf,
+    };
+
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve app data directory: {error}"))?;
+    let geometry_dir = geometry_cache_dir(&data_dir);
+    std::fs::create_dir_all(&geometry_dir)
+        .map_err(|error| format!("Could not create geometry cache: {error}"))?;
+
+    let plate = plate_id.clone();
+    tokio::task::spawn_blocking(move || load_model_geometry(&file, plate.as_deref(), &geometry_dir))
+        .await
+        .map_err(|error| format!("Geometry task failed: {error}"))?
 }

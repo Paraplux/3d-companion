@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ModelGeometryResponse } from "@/types/geometry";
 import type { StlMetadata, ThreeMfMetadata } from "@/types/library";
 import type {
   RemoteConfig,
@@ -125,6 +126,27 @@ export function prepareRemoteFilePreview(
     contentHash,
     filename,
     extension,
+  });
+}
+
+/** Cache if needed, then extract mesh geometry for the 3D viewer (disk-cached by hash). */
+export function getRemoteModelGeometry(
+  fileId: string,
+  contentHash: string,
+  filename: string,
+  extension: string,
+  plateId: string | null,
+  threemf?: ThreeMfMetadata | null,
+  stl?: StlMetadata | null,
+): Promise<ModelGeometryResponse> {
+  return invoke("get_remote_model_geometry", {
+    fileId,
+    contentHash,
+    filename,
+    extension,
+    plateId,
+    threemf: threemf ?? null,
+    stl: stl ?? null,
   });
 }
 

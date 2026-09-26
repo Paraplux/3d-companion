@@ -5,7 +5,7 @@ import { OpenInBambuStudioButton } from "@/components/model/OpenInBambuStudioBut
 import { PlateSelector } from "@/components/model/viewer/PlateSelector";
 import { useLibrary } from "@/hooks/useLibrary";
 import { canOpenInBambuStudio } from "@/lib/bambuStudio";
-import { getModelGeometry } from "@/lib/libraryApi";
+import { getModelGeometryForFile } from "@/lib/libraryApi";
 import { prepareRemoteFilePreview } from "@/lib/remoteApi";
 import { isRemoteLibraryFile } from "@/lib/remoteFiles";
 import type { LibraryFile } from "@/types/library";
@@ -37,12 +37,12 @@ export function ModelPreview({ file }: ModelPreviewProps) {
   const plates = file.threemf?.project?.plates ?? [];
   const initialPlateId = useMemo(() => firstPlateId(file), [file]);
   const isRemote = isRemoteLibraryFile(file);
-  const previewable = canPreview3d(file.extension) && !isRemote;
+  const extension = file.extension.toLowerCase();
+  /** Remote 3MF needs local analysis (threemf) before View 3D / plates. */
+  const needsRemoteThreemf = isRemote && extension === "3mf" && !file.threemf;
+  const remotePreviewReady =
+    !isRemote || extension === "stl" || Boolean(file.threemf);
   const canOpenBambu = canOpenInBambuStudio(file);
-  const needsRemotePlateAnalysis =
-    isRemote &&
-    file.extension.toLowerCase() === "3mf" &&
-    !file.threemf?.project?.plates?.length;
 
   const [selectedPlateId, setSelectedPlateId] = useState<string | null>(initialPlateId);
   const [viewerActive, setViewerActive] = useState(false);
@@ -51,15 +51,18 @@ export function ModelPreview({ file }: ModelPreviewProps) {
     "idle",
   );
 
+  const previewable =
+    canPreview3d(file.extension) && remotePreviewReady && platePhase === "idle";
+
   useEffect(() => {
     setSelectedPlateId(initialPlateId);
     setViewerActive(false);
     setCameraReset(0);
   }, [file.libraryFileId, initialPlateId]);
 
-  // Cache (download if needed) + analyze cloud 3MF so plate previews work without Bambu.
+  // Cache (download if needed) + analyze cloud 3MF so plates + View 3D work.
   useEffect(() => {
-    if (!needsRemotePlateAnalysis) {
+    if (!needsRemoteThreemf) {
       return;
     }
 
@@ -103,7 +106,7 @@ export function ModelPreview({ file }: ModelPreviewProps) {
     file.extension,
     file.libraryFileId,
     file.name,
-    needsRemotePlateAnalysis,
+    needsRemoteThreemf,
     patchLibraryFile,
   ]);
 
@@ -114,14 +117,14 @@ export function ModelPreview({ file }: ModelPreviewProps) {
     }
 
     let cancelled = false;
-    const plateForFile = file.extension.toLowerCase() === "3mf" ? selectedPlateId : null;
+    const plateForFile = extension === "3mf" ? selectedPlateId : null;
     const nextPlate = (file.threemf?.project?.plates ?? [])
       .filter((plate) => plate.id !== selectedPlateId)
       .sort((a, b) => a.index - b.index)[0];
 
     void (async () => {
       try {
-        await getModelGeometry(file.libraryFileId, plateForFile, file.contentHash);
+        await getModelGeometryForFile(file, plateForFile);
       } catch {
         return;
       }
@@ -131,7 +134,7 @@ export function ModelPreview({ file }: ModelPreviewProps) {
       }
 
       try {
-        await getModelGeometry(file.libraryFileId, nextPlate.id, file.contentHash);
+        await getModelGeometryForFile(file, nextPlate.id);
       } catch {
         // Prefetch is best-effort.
       }
@@ -140,18 +143,10 @@ export function ModelPreview({ file }: ModelPreviewProps) {
     return () => {
       cancelled = true;
     };
-  }, [
-    file.contentHash,
-    file.extension,
-    file.libraryFileId,
-    file.threemf?.project?.plates,
-    previewable,
-    selectedPlateId,
-    viewerActive,
-  ]);
+  }, [extension, file, previewable, selectedPlateId, viewerActive]);
 
   const showToolbar =
-    plates.length > 1 || previewable || canOpenBambu || isRemote;
+    plates.length > 1 || canPreview3d(file.extension) || canOpenBambu || isRemote;
   const plateHydrating = platePhase !== "idle";
   const analyzing =
     (!isRemote &&
@@ -184,7 +179,7 @@ export function ModelPreview({ file }: ModelPreviewProps) {
       {analyzing && !viewerActive ? (
         <p className="model-viewer__analysis-hint" role="status">
           {platePhase === "downloading"
-            ? "Downloading model for plate previews…"
+            ? "Downloading model for previews…"
             : platePhase === "analyzing"
               ? "Reading plate previews…"
               : "Analyzing model… preview will update when ready."}
@@ -221,15 +216,17 @@ export function ModelPreview({ file }: ModelPreviewProps) {
             {isRemote ? <DownloadRemoteFileButton file={file} /> : null}
             {canOpenBambu ? <OpenInBambuStudioButton file={file} /> : null}
 
-            {previewable ? (
+            {canPreview3d(file.extension) ? (
               <button
                 type="button"
                 className={viewerActive ? "button button--ghost" : "button button--primary"}
                 onClick={() => setViewerActive((active) => !active)}
-                disabled={analyzing && file.analysisStatus !== "ready" && !file.threemf && !file.stl}
+                disabled={!previewable}
                 title={
-                  analyzing && !file.threemf && !file.stl
-                    ? "Waiting for analysis…"
+                  !previewable
+                    ? isRemote && plateHydrating
+                      ? "Downloading model…"
+                      : "Waiting for analysis…"
                     : undefined
                 }
               >
