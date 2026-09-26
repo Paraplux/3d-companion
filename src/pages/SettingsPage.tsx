@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { CloudConnectionSection } from "@/components/settings/CloudConnectionSection";
+import { FilamentCostSettingsSection } from "@/components/settings/FilamentCostSettingsSection";
 import { TagsSettingsSection } from "@/components/library/TagsSettingsSection";
 import { useLibrary } from "@/hooks/useLibrary";
 import { useRemoteConfig } from "@/hooks/useRemoteConfig";
@@ -45,6 +46,8 @@ export function SettingsPage() {
         </section>
 
         <CloudConnectionSection remote={remote} />
+
+        <FilamentCostSettingsSection />
 
         <section
           className={`settings-block${

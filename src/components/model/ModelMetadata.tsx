@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
 import { FilamentSwatches } from "@/components/library/FilamentSwatches";
+import { useFilamentCostSettings } from "@/hooks/useFilamentCostSettings";
+import { filamentCostDisplay } from "@/lib/filamentCost";
 import { resolveFilaments } from "@/lib/filaments";
 import {
   formatEstimatedPrintTime,
   formatTriangleCount,
 } from "@/lib/format";
+import { isRemoteLibraryFile } from "@/lib/remoteFiles";
 import type { LibraryFile } from "@/types/library";
 
 type ModelMetadataProps = {
@@ -36,12 +39,51 @@ function MetaSection({ title, rows }: { title: string; rows: MetaRow[] }) {
   );
 }
 
-function buildPrintRows(file: LibraryFile): MetaRow[] {
+function isThreeMf(file: LibraryFile): boolean {
+  return file.extension.replace(/^\./, "").toLowerCase() === "3mf";
+}
+
+function resolveWeightGrams(file: LibraryFile): number | undefined {
+  const bambu = file.threemf?.bambu;
+  if (typeof bambu?.weightGrams === "number" && bambu.weightGrams > 0) {
+    return bambu.weightGrams;
+  }
+  const plates = file.threemf?.project?.plates ?? [];
+  let total = 0;
+  let any = false;
+  for (const plate of plates) {
+    if (typeof plate.weightGrams === "number" && plate.weightGrams > 0) {
+      total += plate.weightGrams;
+      any = true;
+    }
+  }
+  return any ? total : undefined;
+}
+
+/** True once we know whether slice weight exists (avoid flashing Not sliced). */
+function canShowFilamentCost(file: LibraryFile): boolean {
+  if (!isThreeMf(file)) {
+    return false;
+  }
+  if (file.threemf) {
+    return true;
+  }
+  // Cloud: wait for prepareRemoteFilePreview to hydrate threemf.
+  if (isRemoteLibraryFile(file)) {
+    return false;
+  }
+  return file.analysisStatus === "ready" || file.analysisStatus === "error";
+}
+
+function buildPrintRows(
+  file: LibraryFile,
+  costLabel: string | null,
+): MetaRow[] {
   const bambu = file.threemf?.bambu;
   const projectPlates = file.threemf?.project?.plates?.length ?? 0;
   const plateCount = bambu?.plateCount ?? (projectPlates > 0 ? projectPlates : undefined);
 
-  if (!bambu && projectPlates === 0) {
+  if (!bambu && projectPlates === 0 && !costLabel) {
     return [];
   }
 
@@ -68,6 +110,12 @@ function buildPrintRows(file: LibraryFile): MetaRow[] {
   }
   if (typeof bambu?.weightGrams === "number") {
     rows.push({ label: "Weight", value: `${bambu.weightGrams.toFixed(1)} g` });
+  }
+  if (costLabel) {
+    rows.push({
+      label: "Est. filament",
+      value: costLabel,
+    });
   }
   if (typeof bambu?.estimatedTimeSeconds === "number") {
     const formatted = formatEstimatedPrintTime(bambu.estimatedTimeSeconds);
@@ -110,7 +158,13 @@ function buildGeometryRows(file: LibraryFile): MetaRow[] {
 }
 
 export function ModelMetadata({ file }: ModelMetadataProps) {
-  const printRows = buildPrintRows(file);
+  const { settings } = useFilamentCostSettings();
+
+  const costLabel = canShowFilamentCost(file)
+    ? filamentCostDisplay(resolveWeightGrams(file), settings).label
+    : null;
+
+  const printRows = buildPrintRows(file, costLabel);
   const geometryRows = buildGeometryRows(file);
 
   if (printRows.length === 0 && geometryRows.length === 0) {
