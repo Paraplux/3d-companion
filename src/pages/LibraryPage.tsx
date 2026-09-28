@@ -44,6 +44,8 @@ export function LibraryPage() {
     uploading,
     error,
     clearError,
+    statusMessage,
+    clearStatus,
     addFolder,
     rescan,
     uploadFiles,
@@ -595,6 +597,9 @@ export function LibraryPage() {
         </div>
 
         {error ? <ErrorBanner message={error} onDismiss={clearError} /> : null}
+        {statusMessage && !error ? (
+          <StatusBanner message={statusMessage} onDismiss={clearStatus} />
+        ) : null}
 
         {activeFilterChips.length > 0 ? (
           <div className="library-active-filters" aria-label="Active filters">
@@ -908,6 +913,23 @@ function ErrorBanner({
 }) {
   return (
     <div className="banner banner--error" role="alert">
+      <p>{message}</p>
+      <button type="button" className="banner__dismiss" onClick={onDismiss}>
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
+function StatusBanner({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="banner banner--success" role="status">
       <p>{message}</p>
       <button type="button" className="banner__dismiss" onClick={onDismiss}>
         Dismiss

@@ -119,6 +119,9 @@ type LibraryContextValue = {
   uploading: boolean;
   error: string | null;
   clearError: () => void;
+  /** Non-error feedback (e.g. upload summary with dedup counts). */
+  statusMessage: string | null;
+  clearStatus: () => void;
   addFolder: () => Promise<void>;
   removeFolder: (path: string) => Promise<void>;
   rescan: () => Promise<void>;
@@ -270,6 +273,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [scanningLabel, setScanningLabel] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   /** In-memory library.json + ETag when cloudMode (source of truth for org). */
@@ -278,6 +282,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const cloudWriteChainRef = useRef<Promise<unknown>>(Promise.resolve());
 
   const clearError = useCallback(() => setError(null), []);
+  const clearStatus = useCallback(() => setStatusMessage(null), []);
 
   const applyOrgState = useCallback((state: OrgState) => {
     setFavoriteIds(state.favoriteIds);
@@ -656,6 +661,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }
 
     clearError();
+    clearStatus();
 
     try {
       const selected = await open({
@@ -685,6 +691,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
           : `Uploading 1 of ${paths.length}…`,
       );
 
+      let uploaded = 0;
+      let deduped = 0;
       const errors: string[] = [];
 
       for (let index = 0; index < paths.length; index += 1) {
@@ -692,11 +700,21 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         if (!path) {
           continue;
         }
-        setScanningLabel(`Uploading ${index + 1} of ${paths.length}…`);
+        const name = path.split(/[/\\]/).pop() ?? path;
+        setScanningLabel(
+          paths.length === 1
+            ? `Uploading ${name}…`
+            : `Uploading ${index + 1} of ${paths.length} — ${name}`,
+        );
         try {
-          await uploadRemoteFile(path);
+          const result = await uploadRemoteFile(path);
+          if (result.deduplicated) {
+            deduped += 1;
+          } else {
+            uploaded += 1;
+          }
         } catch (err) {
-          errors.push(toUserError(err, `Could not upload ${path}`));
+          errors.push(toUserError(err, `Could not upload ${name}`));
         }
       }
 
@@ -710,13 +728,28 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
             : `${errors.length} uploads failed. ${errors[0] ?? ""}`,
         );
       }
+
+      const parts: string[] = [];
+      if (uploaded === 1) {
+        parts.push("1 uploaded");
+      } else if (uploaded > 1) {
+        parts.push(`${uploaded} uploaded`);
+      }
+      if (deduped === 1) {
+        parts.push("1 already in cloud");
+      } else if (deduped > 1) {
+        parts.push(`${deduped} already in cloud`);
+      }
+      if (parts.length > 0) {
+        setStatusMessage(parts.join(" · "));
+      }
     } catch (err) {
       setError(toUserError(err, "Could not upload files."));
     } finally {
       setUploading(false);
       setScanningLabel(null);
     }
-  }, [clearError, cloudMode]);
+  }, [clearError, clearStatus, cloudMode]);
 
   const deleteCloudFile = useCallback(
     async (libraryFileId: LibraryFileId): Promise<boolean> => {
@@ -1530,6 +1563,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       uploading,
       error,
       clearError,
+      statusMessage,
+      clearStatus,
       addFolder,
       removeFolder,
       rescan,
@@ -1587,6 +1622,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       uploading,
       error,
       clearError,
+      statusMessage,
+      clearStatus,
       addFolder,
       removeFolder,
       rescan,
