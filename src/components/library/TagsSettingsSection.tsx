@@ -79,8 +79,8 @@ export function TagsSettingsSection() {
         <div>
           <h2 className="settings-section__title">Tags</h2>
           <p className="settings-section__description">
-            Organize models with free-form labels. Tags stay with a model even if
-            the file moves on disk.
+            Labels for what a model is — vase, storage, décor. Tags stay with the
+            model even if the file moves.
           </p>
         </div>
       </div>

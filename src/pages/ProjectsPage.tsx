@@ -84,7 +84,7 @@ export function ProjectsPage() {
 
   const subtitle =
     projects.length === 0
-      ? "Group models around a concrete goal"
+      ? "A body of work — a shop, a client, a series"
       : projects.length === 1
         ? "1 project"
         : `${projects.length} projects`;
@@ -130,7 +130,7 @@ export function ProjectsPage() {
                   className="projects-create__input"
                   value={name}
                   disabled={busy}
-                  placeholder="e.g. Robot Arm"
+                  placeholder="e.g. Elodyssée"
                   onChange={(event) => {
                     setName(event.target.value);
                     setLocalError(null);
@@ -190,7 +190,7 @@ export function ProjectsPage() {
       {projects.length === 0 ? (
         <EmptyState
           title="No projects yet"
-          description="Create a project to gather the models that belong to one goal — a build, a commission, or a print run."
+          description="Create a project for a shop, a client, or a print series — then add the models that belong to it."
           action={
             <button
               type="button"

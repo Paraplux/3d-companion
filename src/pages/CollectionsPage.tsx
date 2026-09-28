@@ -86,7 +86,7 @@ export function CollectionsPage() {
 
   const subtitle =
     collections.length === 0
-      ? "Group models into intentional sets"
+      ? "A theme or mood across your library"
       : collections.length === 1
         ? "1 collection"
         : `${collections.length} collections`;
@@ -131,7 +131,7 @@ export function CollectionsPage() {
                   className="collections-create__input"
                   value={name}
                   disabled={busy}
-                  placeholder="e.g. Ghostface"
+                  placeholder="e.g. Halloween"
                   onChange={(event) => {
                     setName(event.target.value);
                     setLocalError(null);
@@ -172,7 +172,7 @@ export function CollectionsPage() {
       {collections.length === 0 ? (
         <EmptyState
           title="No collections yet"
-          description="Create a collection to group models you want to keep together — print queues, gift ideas, themed sets."
+          description="Create a collection for a theme — Halloween, gift ideas, a mood — spanning any project."
           action={
             <button
               type="button"

@@ -4,6 +4,7 @@ import { FileCard } from "@/components/library/FileCard";
 import { FolderCard } from "@/components/library/FolderCard";
 import { LibraryBreadcrumbs } from "@/components/library/LibraryBreadcrumbs";
 import { LibraryFiltersPanel } from "@/components/library/LibraryFiltersPanel";
+import { LibrarySortSelect } from "@/components/library/LibrarySortSelect";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useLibrary } from "@/hooks/useLibrary";
@@ -548,33 +549,14 @@ export function LibraryPage() {
               onChange={setFilters}
             />
 
-            <label className="library-sort">
-              <span className="library-sort__label">Sort</span>
-              <select
-                value={sortField}
-                onChange={(event) => setSortField(event.target.value as SortField)}
-              >
-                <option value="name">Name</option>
-                <option value="addedAt">Date added</option>
-                <option value="modifiedAt">Date modified</option>
-                <option value="size">Size</option>
-                <option value="type">Type</option>
-              </select>
-            </label>
-
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={() =>
-                setSortDirection((current) => (current === "asc" ? "desc" : "asc"))
-              }
-              aria-label={
-                sortDirection === "asc" ? "Sort descending" : "Sort ascending"
-              }
-              title={sortDirection === "asc" ? "Ascending" : "Descending"}
-            >
-              {sortDirection === "asc" ? "Asc" : "Desc"}
-            </button>
+            <LibrarySortSelect
+              field={sortField}
+              direction={sortDirection}
+              onChange={(field, direction) => {
+                setSortField(field);
+                setSortDirection(direction);
+              }}
+            />
 
             <button
               type="button"
@@ -736,33 +718,14 @@ export function LibraryPage() {
             onChange={setFilters}
           />
 
-          <label className="library-sort">
-            <span className="library-sort__label">Sort</span>
-            <select
-              value={sortField}
-              onChange={(event) => setSortField(event.target.value as SortField)}
-            >
-              <option value="name">Name</option>
-              <option value="addedAt">Date added</option>
-              <option value="modifiedAt">Date modified</option>
-              <option value="size">Size</option>
-              <option value="type">Type</option>
-            </select>
-          </label>
-
-          <button
-            type="button"
-            className="button button--ghost"
-            onClick={() =>
-              setSortDirection((current) => (current === "asc" ? "desc" : "asc"))
-            }
-            aria-label={
-              sortDirection === "asc" ? "Sort descending" : "Sort ascending"
-            }
-            title={sortDirection === "asc" ? "Ascending" : "Descending"}
-          >
-            {sortDirection === "asc" ? "Asc" : "Desc"}
-          </button>
+          <LibrarySortSelect
+            field={sortField}
+            direction={sortDirection}
+            onChange={(field, direction) => {
+              setSortField(field);
+              setSortDirection(direction);
+            }}
+          />
 
           <button
             type="button"

@@ -274,7 +274,7 @@ export function ProjectDetailPage() {
       {models.length === 0 ? (
         <EmptyState
           title="No models in this project"
-          description="Add models from your library, or keep this project as a placeholder for later."
+          description="Add models that belong to this shop, client, or series — or keep the project as a placeholder."
           action={addButton}
         />
       ) : (

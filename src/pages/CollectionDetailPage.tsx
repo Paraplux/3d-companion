@@ -255,7 +255,7 @@ export function CollectionDetailPage() {
       {models.length === 0 ? (
         <EmptyState
           title="No models in this collection"
-          description="Add models from your library, or keep this collection as a placeholder for later."
+          description="Add models for this theme — or keep the collection as a placeholder for later."
           action={addButton}
         />
       ) : (

@@ -32,7 +32,7 @@ export function AddModelsModal({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<LibraryFileId>>(() => new Set());
   const [busy, setBusy] = useState(false);
-  const [hideMembers, setHideMembers] = useState(false);
+  const [hideMembers, setHideMembers] = useState(true);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const normalizedQuery = query.trim().toLowerCase();
 

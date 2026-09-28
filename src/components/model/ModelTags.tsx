@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TagPill } from "@/components/library/TagPill";
+import { ModelOrgSection } from "@/components/model/ModelOrgSection";
 import { useLibrary } from "@/hooks/useLibrary";
 import type { LibraryFileId } from "@/types/libraryData";
 
@@ -28,8 +29,6 @@ export function ModelTags({ libraryFileId }: ModelTagsProps) {
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [localError, setLocalError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const savedTimerRef = useRef<number | null>(null);
 
   const busy = status === "saving";
@@ -41,7 +40,12 @@ export function ModelTags({ libraryFileId }: ModelTagsProps) {
       .filter((tag) =>
         needle ? tag.name.toLowerCase().includes(needle) : true,
       )
-      .slice(0, 8);
+      .slice(0, 12)
+      .map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        fileCount: tag.fileCount,
+      }));
   }, [assignedIds, normalizedQuery, tags]);
 
   const exactMatch = tags.find(
@@ -61,35 +65,6 @@ export function ModelTags({ libraryFileId }: ModelTagsProps) {
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    inputRef.current?.focus();
-
-    function onPointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-        setQuery("");
-      }
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-        setQuery("");
-      }
-    }
-
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
 
   function markSaved() {
     setStatus("saved");
@@ -156,116 +131,52 @@ export function ModelTags({ libraryFileId }: ModelTagsProps) {
           : null;
 
   return (
-    <section className="model-meta-section model-tags" ref={rootRef}>
-      <div className="model-tags__header">
-        <h2 className="model-meta-section__title">Tags</h2>
-        <div className="model-tags__action">
-          {statusLabel ? (
-            <span
-              className={
-                status === "error"
-                  ? "model-notes__status model-notes__status--unsaved"
-                  : "model-notes__status"
-              }
-              aria-live="polite"
-            >
-              {statusLabel}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            className="model-tags__add"
-            aria-expanded={open}
-            aria-haspopup="listbox"
-            disabled={busy}
-            onClick={() => {
-              setOpen((current) => !current);
-              if (open) {
-                setQuery("");
-              }
-            }}
+    <ModelOrgSection
+      title="Tags"
+      addAriaLabel="Add tag"
+      dialogLabel="Add tag"
+      assigned={assigned.map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        fileCount: tag.fileCount,
+      }))}
+      suggestions={suggestions}
+      query={query}
+      onQueryChange={setQuery}
+      open={open}
+      onOpenChange={setOpen}
+      canCreate={canCreate}
+      busy={busy}
+      emptyHint="Type a label — vase, storage, décor…"
+      noMatchHint="No matching tags."
+      onAttach={(id) => void attachExisting(id)}
+      onCreate={() => void createAndAttach()}
+      onEnterFallback={() => {
+        if (exactMatch && !assignedIds.has(exactMatch.id)) {
+          void attachExisting(exactMatch.id);
+        }
+      }}
+      statusSlot={
+        statusLabel ? (
+          <span
+            className={
+              status === "error"
+                ? "model-notes__status model-notes__status--unsaved"
+                : "model-notes__status"
+            }
+            aria-live="polite"
           >
-            Add tag
-          </button>
-
-          {open ? (
-            <div className="model-tags__popover" role="dialog" aria-label="Add tag">
-              <input
-                ref={inputRef}
-                type="text"
-                className="model-tags__input"
-                value={query}
-                disabled={busy}
-                placeholder="Search or create…"
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    if (suggestions[0]) {
-                      void attachExisting(suggestions[0].id);
-                    } else if (canCreate) {
-                      void createAndAttach();
-                    } else if (exactMatch && !assignedIds.has(exactMatch.id)) {
-                      void attachExisting(exactMatch.id);
-                    }
-                  }
-                }}
-              />
-
-              <div className="model-tags__suggestions" role="listbox">
-                {suggestions.map((tag) => (
-                  <button
-                    key={tag.id}
-                    type="button"
-                    className="model-tags__suggestion"
-                    role="option"
-                    disabled={busy}
-                    onClick={() => void attachExisting(tag.id)}
-                  >
-                    <span>{tag.name}</span>
-                    <span className="model-tags__suggestion-count">
-                      {tag.fileCount}
-                    </span>
-                  </button>
-                ))}
-
-                {canCreate ? (
-                  <button
-                    type="button"
-                    className="model-tags__suggestion model-tags__suggestion--create"
-                    disabled={busy}
-                    onClick={() => void createAndAttach()}
-                  >
-                    Create “{normalizedQuery}”
-                  </button>
-                ) : null}
-
-                {suggestions.length === 0 && !canCreate ? (
-                  <p className="model-tags__suggestion-empty">
-                    {normalizedQuery
-                      ? "No matching tags."
-                      : "Type to find a tag."}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {assigned.length === 0 ? (
-        <p className="model-tags__empty">No tags</p>
-      ) : (
-        <div className="model-tags__list">
-          {assigned.map((tag) => (
-            <TagPill
-              key={tag.id}
-              tag={tag}
-              onRemove={busy ? undefined : () => void removeTag(tag.id)}
-            />
-          ))}
-        </div>
+            {statusLabel}
+          </span>
+        ) : null
+      }
+      renderItem={(item) => (
+        <TagPill
+          key={item.id}
+          tag={assigned.find((tag) => tag.id === item.id)!}
+          onRemove={busy ? undefined : () => void removeTag(item.id)}
+        />
       )}
-    </section>
+    />
   );
 }

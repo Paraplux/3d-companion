@@ -180,10 +180,11 @@ function FileCardComponent({
 
       <div className="file-card__meta">
         <h3 className="file-card__name">{displayName}</h3>
-        <p className="file-card__filename">{file.name}</p>
-
         {hasBambuDetails ? (
           <>
+            <p className="file-card__detail">
+              {file.extension.toUpperCase()} · {formatBytes(file.size)}
+            </p>
             {printerNozzle ? (
               <p className="file-card__detail">{printerNozzle}</p>
             ) : null}
