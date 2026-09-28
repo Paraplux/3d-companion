@@ -1,6 +1,6 @@
 # Architecture — Data Separation
 
-This document is the reference for how **3D Library** separates physical files, portable library organization, local indexes, and per-machine configuration.
+This document is the reference for how **3D Companion** separates physical files, portable library organization, local indexes, and per-machine configuration.
 
 It prepares Phases 3+ (SQLite, sync). It does **not** implement those systems yet.
 

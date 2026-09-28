@@ -115,13 +115,14 @@ a:focus-visible {
   app-region: drag;
 }
 
-.sidebar__mark {
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 999px;
-  background: linear-gradient(145deg, #5ac8fa, var(--accent));
-  box-shadow: 0 0 0 3px var(--accent-soft);
+.sidebar__logo {
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 0.35rem;
+  object-fit: cover;
+  flex-shrink: 0;
   pointer-events: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
 }
 
 .sidebar__title {

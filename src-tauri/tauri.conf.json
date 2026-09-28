@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "3D Library",
+  "productName": "3D Companion",
   "version": "0.1.0",
   "identifier": "com.3dlibrary.companion",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "3D Library",
+        "title": "3D Companion",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

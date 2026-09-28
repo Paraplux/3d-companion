@@ -1,4 +1,4 @@
-# 3D Library
+# 3D Companion
 
 Companion desktop app for Bambu Studio. This repository currently contains the Tauri 2 + React bootstrap only.
 

@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import type { ReactNode } from "react";
+import appLogo from "@/assets/brand/app-icon.png";
 import { useLibrary } from "@/hooks/useLibrary";
 
 type NavItem = {
@@ -25,8 +26,15 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar__brand" data-tauri-drag-region>
-        <span className="sidebar__mark" aria-hidden="true" />
-        <span className="sidebar__title">3D Library</span>
+        <img
+          className="sidebar__logo"
+          src={appLogo}
+          alt=""
+          width={28}
+          height={28}
+          draggable={false}
+        />
+        <span className="sidebar__title">3D Companion</span>
       </div>
 
       <nav className="sidebar__nav" aria-label="Main">

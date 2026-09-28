@@ -33,7 +33,7 @@ export function SettingsPage() {
           <div className="settings-section__copy">
             <h2 className="settings-section__title">Appearance</h2>
             <p className="settings-section__description">
-              Choose how 3D Library looks. System follows your macOS appearance.
+              Choose how 3D Companion looks. System follows your macOS appearance.
             </p>
           </div>
 
