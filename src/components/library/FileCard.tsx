@@ -87,6 +87,7 @@ function FileCardComponent({
   const remoteThumbSrc = useRemoteThumbnailSrc(
     file.libraryFileId,
     Boolean(isRemote && file.hasRemoteThumbnail),
+    file.contentHash,
   );
 
   useEffect(() => {

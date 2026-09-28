@@ -34,7 +34,11 @@ export function ModelViewerPlaceholder({
   const wantRemoteThumb = Boolean(
     isRemote && file.hasRemoteThumbnail && !localSrc,
   );
-  const remoteSrc = useRemoteThumbnailSrc(file.libraryFileId, wantRemoteThumb);
+  const remoteSrc = useRemoteThumbnailSrc(
+    file.libraryFileId,
+    wantRemoteThumb,
+    file.contentHash,
+  );
   const previewSrc = localSrc ?? remoteSrc;
 
   return (

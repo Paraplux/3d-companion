@@ -22,11 +22,14 @@ export function PreviewThumb({
   const remoteSrc = useRemoteThumbnailSrc(
     file?.libraryFileId ?? "",
     Boolean(isRemote && file?.hasRemoteThumbnail),
+    file?.contentHash,
   );
   const localSrc = file?.thumbnailPath
     ? convertFileSrc(file.thumbnailPath)
     : null;
-  const src = localSrc ?? remoteSrc;
+  // Prefer cloud thumb for remote rows so a post-sync cover wins over a stale
+  // local plate preview left from opening the model.
+  const src = isRemote ? (remoteSrc ?? localSrc) : (localSrc ?? remoteSrc);
 
   if (!src) {
     return <div className={placeholderClassName} />;

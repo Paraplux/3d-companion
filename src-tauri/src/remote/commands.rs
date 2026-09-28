@@ -277,8 +277,9 @@ pub async fn replace_remote_file(
         }
     }
 
-    // Thumbnail is keyed by file id — force a fresh download after replace.
-    if let Ok(thumbs) = thumbnails_dir(&app) {
+    // Cloud thumbs live under remote-thumbnails/{fileId}.* — drop them so the
+    // next GET re-downloads the server-regenerated preview for the new bytes.
+    if let Ok(thumbs) = remote_thumbnails_cache_dir(&app) {
         for ext in ["webp", "png", "jpg", "jpeg"] {
             let stale = thumbs.join(format!("{file_id}.{ext}"));
             let _ = std::fs::remove_file(stale);

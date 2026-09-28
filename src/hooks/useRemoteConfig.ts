@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { clearRemoteThumbnailPathCache } from "@/hooks/useRemoteThumbnailSrc";
 import { toUserError } from "@/lib/libraryApi";
 import {
   backfillRemoteThumbnails,
@@ -183,6 +184,7 @@ export function useRemoteConfig() {
     setError(null);
     try {
       const result = await clearRemoteCache();
+      clearRemoteThumbnailPathCache();
       setCacheStats({ bytes: result.bytes, fileCount: result.fileCount });
       return result;
     } catch (err) {

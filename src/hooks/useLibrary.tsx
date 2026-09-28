@@ -45,6 +45,7 @@ import {
   updateProject as updateProjectApi,
   upsertFileNote as upsertFileNoteApi,
 } from "@/lib/libraryApi";
+import { invalidateRemoteThumbnailCache } from "@/hooks/useRemoteThumbnailSrc";
 import { buildFileCollectionMap, collectionsForFile } from "@/lib/collections";
 import {
   docAddFavorite,
@@ -870,6 +871,9 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         );
         const unchanged =
           result.deduplicated && result.contentHash === previous.contentHash;
+        if (!unchanged) {
+          invalidateRemoteThumbnailCache(libraryFileId);
+        }
         const mapped: LibraryFile = {
           ...previous,
           contentHash: result.contentHash,
@@ -879,6 +883,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
           // Force plate / mesh re-prep for the new bytes.
           threemf: undefined,
           stl: undefined,
+          // Drop stale local analysis thumb so mosaic uses the refreshed cloud cover.
+          thumbnailPath: unchanged ? previous.thumbnailPath : undefined,
           // Server regenerates thumbnails on replace — drop stale flag so UI refetches.
           hasRemoteThumbnail: unchanged
             ? previous.hasRemoteThumbnail
