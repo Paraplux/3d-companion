@@ -786,9 +786,11 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
           ...updated,
           createdAt:
             updated.createdAt ||
-            (previous
-              ? new Date(previous.modifiedAt).toISOString()
-              : updated.updatedAt),
+            (previous?.addedAt != null
+              ? new Date(previous.addedAt).toISOString()
+              : previous
+                ? new Date(previous.modifiedAt).toISOString()
+                : updated.updatedAt),
           hasThumbnail:
             updated.hasThumbnail ?? previous?.hasRemoteThumbnail ?? false,
         });

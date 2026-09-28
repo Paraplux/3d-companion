@@ -188,6 +188,10 @@ export function sortFiles(
           sensitivity: "base",
         });
         break;
+      case "addedAt":
+        comparison =
+          (left.addedAt ?? left.modifiedAt) - (right.addedAt ?? right.modifiedAt);
+        break;
       case "modifiedAt":
         comparison = left.modifiedAt - right.modifiedAt;
         break;

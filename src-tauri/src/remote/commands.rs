@@ -8,6 +8,10 @@ use super::client::{
     RemoteConnectionTestResult, RemoteFileSummary, RemoteIngestResult, RemoteLibraryResponse,
 };
 use super::config::{load_config, save_config, RemoteConfig};
+use super::imports::{
+    ensure_folder_is_absolute, finalize_candidate, list_candidates, preview_candidate,
+    ImportCandidate, ImportsAfterAction,
+};
 use crate::library::analysis::{analyze_file, resolve_threemf_paths, thumbnail_absolute};
 use crate::library::bambu_studio::{
     is_bambu_studio_compatible_extension, open_path_in_bambu_studio,
@@ -65,8 +69,47 @@ pub fn save_remote_config(app: AppHandle, config: RemoteConfig) -> Result<Remote
     if next.enabled || next.is_configured() {
         let _ = next.api_origin()?;
     }
+
+    let imports_path = ensure_folder_is_absolute(&next.imports_folder_path)?;
+    next.imports_folder_path = if imports_path.as_os_str().is_empty() {
+        String::new()
+    } else {
+        imports_path.to_string_lossy().into_owned()
+    };
+    next.imports_after_action = ImportsAfterAction::parse(&next.imports_after_action)
+        .as_str()
+        .to_string();
+
     save_config(&app, &next)?;
     Ok(next)
+}
+
+#[tauri::command]
+pub fn list_import_candidates(app: AppHandle) -> Result<Vec<ImportCandidate>, String> {
+    let config = load_config(&app)?;
+    let folder = ensure_folder_is_absolute(&config.imports_folder_path)?;
+    if folder.as_os_str().is_empty() {
+        return Ok(Vec::new());
+    }
+    list_candidates(&folder)
+}
+
+#[tauri::command]
+pub fn finalize_import_candidate(app: AppHandle, path: String) -> Result<(), String> {
+    let config = load_config(&app)?;
+    let action = ImportsAfterAction::parse(&config.imports_after_action);
+    finalize_candidate(std::path::Path::new(&path), action)
+}
+
+#[tauri::command]
+pub fn get_import_preview(app: AppHandle, path: String) -> Result<Option<String>, String> {
+    let cache_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve app data dir: {error}"))?
+        .join("import-previews");
+    let preview = preview_candidate(std::path::Path::new(&path), &cache_dir)?;
+    Ok(preview.map(|value| value.to_string_lossy().into_owned()))
 }
 
 #[tauri::command]

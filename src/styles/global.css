@@ -457,6 +457,21 @@ a:focus-visible {
   opacity: 0.9;
 }
 
+.settings-field__hint code {
+  font-size: 0.85em;
+}
+
+.settings-field__row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.settings-field__row .settings-field__input {
+  flex: 1;
+  min-width: 0;
+}
+
 .settings-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1962,6 +1977,100 @@ a:focus-visible {
 
 .page--library {
   gap: 1.15rem;
+}
+
+.page--imports {
+  gap: 1rem;
+}
+
+.imports-top {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.imports-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.imports-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.imports-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.imports-table th,
+.imports-table td {
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.imports-table th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg) 70%, var(--bg-elevated));
+}
+
+.imports-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.imports-table__check {
+  width: 2.25rem;
+}
+
+.imports-table__preview {
+  width: 3.5rem;
+}
+
+.imports-thumb {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg) 55%, var(--border));
+  display: grid;
+  place-items: center;
+}
+
+.imports-thumb__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.imports-thumb__badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+
+.imports-table__name {
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  word-break: break-word;
+}
+
+.imports-table__actions {
+  text-align: right;
+  white-space: nowrap;
 }
 
 .page--model-detail {

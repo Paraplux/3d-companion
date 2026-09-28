@@ -97,6 +97,11 @@ export type LibraryFile = {
   extension: string;
   size: number;
   modifiedAt: number;
+  /**
+   * When the file was added to the library catalog.
+   * Cloud: server `createdAt`. Local / missing: fall back to `modifiedAt` when sorting.
+   */
+  addedAt?: number;
   relativePath: string;
   locationPath: string;
   analysisStatus: AnalysisStatus;
@@ -209,5 +214,5 @@ export type FileTag = {
   tagId: string;
 };
 
-export type SortField = "name" | "modifiedAt" | "size" | "type";
+export type SortField = "name" | "addedAt" | "modifiedAt" | "size" | "type";
 export type SortDirection = "asc" | "desc";

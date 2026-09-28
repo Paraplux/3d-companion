@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_REMOTE_CONFIG,
   isRemoteConfigured,
+  normalizeImportsAfterAction,
   normalizeRemoteBaseUrl,
 } from "@/types/remoteConfig";
 
@@ -33,5 +34,13 @@ describe("remoteConfig helpers", () => {
     expect(normalizeRemoteBaseUrl("https://api.example.com/")).toBe(
       "https://api.example.com",
     );
+  });
+
+  it("normalizes imports after-action values", () => {
+    expect(normalizeImportsAfterAction("keep")).toBe("keep");
+    expect(normalizeImportsAfterAction("delete")).toBe("delete");
+    expect(normalizeImportsAfterAction("move")).toBe("move");
+    expect(normalizeImportsAfterAction("nope")).toBe("move");
+    expect(normalizeImportsAfterAction(undefined)).toBe("move");
   });
 });

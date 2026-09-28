@@ -22,6 +22,7 @@ describe("remoteFileToLibraryFile", () => {
     expect(file.locationPath).toBe(REMOTE_LOCATION_PATH);
     expect(file.analysisStatus).toBe("ready");
     expect(file.hasRemoteThumbnail).toBe(false);
+    expect(file.addedAt).toBe(Date.parse("2026-01-01T00:00:00Z"));
     expect(file.modifiedAt).toBe(Date.parse("2026-01-02T00:00:00Z"));
   });
 

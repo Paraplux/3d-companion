@@ -33,6 +33,11 @@ const FavoritesPage = lazy(async () => {
   return { default: module.FavoritesPage };
 });
 
+const ImportsPage = lazy(async () => {
+  const module = await import("@/pages/ImportsPage");
+  return { default: module.ImportsPage };
+});
+
 const SettingsPage = lazy(async () => {
   const module = await import("@/pages/SettingsPage");
   return { default: module.SettingsPage };
@@ -59,6 +64,7 @@ export default function App() {
           <Route path="collections" element={<CollectionsPage />} />
           <Route path="collections/:collectionId" element={<CollectionDetailPage />} />
           <Route path="favorites" element={<FavoritesPage />} />
+          <Route path="imports" element={<ImportsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/library" replace />} />
         </Route>

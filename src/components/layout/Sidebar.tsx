@@ -1,13 +1,27 @@
 import { NavLink } from "react-router-dom";
+import type { ReactNode } from "react";
+import { useLibrary } from "@/hooks/useLibrary";
 
-const primaryNav = [
-  { to: "/library", label: "Library", icon: LibraryIcon },
-  { to: "/projects", label: "Projects", icon: ProjectsIcon },
-  { to: "/collections", label: "Collections", icon: CollectionsIcon },
-  { to: "/favorites", label: "Favorites", icon: FavoritesIcon },
-] as const;
+type NavItem = {
+  to: string;
+  label: string;
+  icon: () => ReactNode;
+  end?: boolean;
+};
 
 export function Sidebar() {
+  const { cloudMode } = useLibrary();
+
+  const primaryNav: NavItem[] = [
+    { to: "/library", label: "Library", icon: LibraryIcon },
+    ...(cloudMode
+      ? [{ to: "/imports", label: "Imports", icon: ImportsIcon, end: true }]
+      : []),
+    { to: "/projects", label: "Projects", icon: ProjectsIcon },
+    { to: "/collections", label: "Collections", icon: CollectionsIcon },
+    { to: "/favorites", label: "Favorites", icon: FavoritesIcon, end: true },
+  ];
+
   return (
     <aside className="sidebar">
       <div className="sidebar__brand" data-tauri-drag-region>
@@ -16,11 +30,14 @@ export function Sidebar() {
       </div>
 
       <nav className="sidebar__nav" aria-label="Main">
-        {primaryNav.map(({ to, label, icon: Icon }) => (
+        {primaryNav.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
-            end={to !== "/library" && to !== "/collections" && to !== "/projects"}
+            end={
+              end ??
+              (to !== "/library" && to !== "/collections" && to !== "/projects")
+            }
             className={({ isActive }) =>
               isActive ? "sidebar__link is-active" : "sidebar__link"
             }
@@ -53,6 +70,20 @@ function LibraryIcon() {
         d="M2.5 3.5h4v9h-4v-9ZM7.5 3.5h6v9h-6v-9Z"
         stroke="currentColor"
         strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ImportsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M3 10.5v2h10v-2M8 2.5v7M8 9.5 5.5 7M8 9.5 10.5 7"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>

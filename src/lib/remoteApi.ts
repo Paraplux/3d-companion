@@ -7,6 +7,7 @@ import type {
   RemoteFileSummary,
   RemoteIngestResult,
   RemoteLibraryResponse,
+  ImportCandidate,
 } from "@/types/remoteConfig";
 
 export const REMOTE_CONFIG_CHANGED_EVENT = "remote-config-changed";
@@ -166,4 +167,19 @@ export function getRemoteModelGeometry(
 /** Downloads (or returns cached) cloud thumbnail; absolute local path for convertFileSrc. */
 export function getRemoteThumbnail(fileId: string): Promise<string> {
   return invoke("get_remote_thumbnail", { fileId });
+}
+
+/** List supported models in the configured local Imports folder (non-recursive). */
+export function listImportCandidates(): Promise<ImportCandidate[]> {
+  return invoke("list_import_candidates");
+}
+
+/** Apply keep / move / delete after a successful cloud upload from Imports. */
+export function finalizeImportCandidate(path: string): Promise<void> {
+  return invoke("finalize_import_candidate", { path });
+}
+
+/** Local WebP preview path for an Imports file (3MF/STL), or null. */
+export function getImportPreview(path: string): Promise<string | null> {
+  return invoke("get_import_preview", { path });
 }

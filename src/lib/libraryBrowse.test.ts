@@ -6,8 +6,27 @@ import {
   libraryHrefForTag,
   libraryUrlFromSearchParams,
   libraryUrlToSearchParams,
+  sortFiles,
 } from "@/lib/libraryBrowse";
 import { EMPTY_LIBRARY_SEARCH } from "@/lib/librarySearch";
+import type { LibraryFile } from "@/types/library";
+
+function stubFile(
+  overrides: Partial<LibraryFile> & Pick<LibraryFile, "name">,
+): LibraryFile {
+  return {
+    libraryFileId: overrides.name,
+    contentHash: "hash",
+    path: `/x/${overrides.name}`,
+    extension: "stl",
+    size: 1,
+    modifiedAt: 100,
+    relativePath: overrides.name,
+    locationPath: "/x",
+    analysisStatus: "ready",
+    ...overrides,
+  };
+}
 
 describe("library browse URL state", () => {
   it("round-trips location and relative dir", () => {
@@ -111,5 +130,19 @@ describe("library search URL state", () => {
     expect(params.get("loc")).toBe("/Users/me/Models");
     expect(params.get("dir")).toBe("props");
     expect(params.get("q")).toBeNull();
+  });
+});
+
+describe("sortFiles", () => {
+  it("sorts by date added, falling back to modifiedAt", () => {
+    const older = stubFile({ name: "a.stl", addedAt: 10, modifiedAt: 50 });
+    const newer = stubFile({ name: "b.stl", addedAt: 20, modifiedAt: 40 });
+    const localOnly = stubFile({ name: "c.stl", modifiedAt: 15 });
+
+    const desc = sortFiles([older, newer, localOnly], "addedAt", "desc");
+    expect(desc.map((f) => f.name)).toEqual(["b.stl", "c.stl", "a.stl"]);
+
+    const asc = sortFiles([older, newer, localOnly], "addedAt", "asc");
+    expect(asc.map((f) => f.name)).toEqual(["a.stl", "c.stl", "b.stl"]);
   });
 });

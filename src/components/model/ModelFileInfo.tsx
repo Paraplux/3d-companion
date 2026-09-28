@@ -35,6 +35,13 @@ export function ModelFileInfo({ file, locationName }: ModelFileInfoProps) {
   rows.push({ label: "Filename", value: file.name });
   rows.push({ label: "Size", value: formatBytes(file.size) });
 
+  if (file.addedAt != null) {
+    const added = formatModifiedDate(file.addedAt);
+    if (added) {
+      rows.push({ label: "Added", value: added });
+    }
+  }
+
   if (modified) {
     rows.push({ label: "Modified", value: modified });
   }

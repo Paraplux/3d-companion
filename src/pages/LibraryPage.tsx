@@ -94,6 +94,15 @@ export function LibraryPage() {
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
 
+  // Cloud catalog has a real "date added"; default to newest first.
+  useEffect(() => {
+    if (!cloudMode) {
+      return;
+    }
+    setSortField("addedAt");
+    setSortDirection("desc");
+  }, [cloudMode]);
+
   // URL filters drive SQLite; draftQuery is debounced into the URL.
   const searchFilters = filters;
   const isFiltering = hasActiveSearchOrFilters(searchFilters);
@@ -544,6 +553,7 @@ export function LibraryPage() {
                 onChange={(event) => setSortField(event.target.value as SortField)}
               >
                 <option value="name">Name</option>
+                <option value="addedAt">Date added</option>
                 <option value="modifiedAt">Date modified</option>
                 <option value="size">Size</option>
                 <option value="type">Type</option>
@@ -728,6 +738,7 @@ export function LibraryPage() {
               onChange={(event) => setSortField(event.target.value as SortField)}
             >
               <option value="name">Name</option>
+              <option value="addedAt">Date added</option>
               <option value="modifiedAt">Date modified</option>
               <option value="size">Size</option>
               <option value="type">Type</option>

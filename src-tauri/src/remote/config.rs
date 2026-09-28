@@ -7,6 +7,10 @@ use tauri::{AppHandle, Manager};
 const CONFIG_FILENAME: &str = "remote-config.json";
 const DEFAULT_CACHE_TTL_DAYS: u32 = 7;
 
+fn default_imports_after_action() -> String {
+    "move".into()
+}
+
 /// Machine-local remote library connection (never synced).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +23,12 @@ pub struct RemoteConfig {
     pub api_key: String,
     /// How long downloaded model files stay in the local cache (days).
     pub cache_ttl_days: u32,
+    /// Local Bambu / MakerWorld download folder used as an import staging area.
+    #[serde(default)]
+    pub imports_folder_path: String,
+    /// After a successful cloud import: `keep` | `move` (to Imported/) | `delete`.
+    #[serde(default = "default_imports_after_action")]
+    pub imports_after_action: String,
 }
 
 impl Default for RemoteConfig {
@@ -28,6 +38,8 @@ impl Default for RemoteConfig {
             base_url: String::new(),
             api_key: String::new(),
             cache_ttl_days: DEFAULT_CACHE_TTL_DAYS,
+            imports_folder_path: String::new(),
+            imports_after_action: default_imports_after_action(),
         }
     }
 }
@@ -93,6 +105,10 @@ pub fn load_config(app: &AppHandle) -> Result<RemoteConfig, String> {
     if config.cache_ttl_days == 0 {
         config.cache_ttl_days = DEFAULT_CACHE_TTL_DAYS;
     }
+    let action = config.imports_after_action.trim().to_ascii_lowercase();
+    if action != "keep" && action != "move" && action != "delete" {
+        config.imports_after_action = default_imports_after_action();
+    }
 
     Ok(config)
 }
@@ -116,6 +132,8 @@ mod tests {
             base_url: "https://api.example.com/v1/".into(),
             api_key: "secret".into(),
             cache_ttl_days: 7,
+            imports_folder_path: String::new(),
+            imports_after_action: "move".into(),
         };
         assert_eq!(config.api_origin().unwrap(), "https://api.example.com");
         assert_eq!(

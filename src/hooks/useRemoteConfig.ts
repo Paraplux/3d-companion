@@ -9,6 +9,7 @@ import {
 import {
   DEFAULT_REMOTE_CONFIG,
   isRemoteConfigured,
+  normalizeImportsAfterAction,
   type RemoteConfig,
   type RemoteConnectionTestResult,
 } from "@/types/remoteConfig";
@@ -32,8 +33,16 @@ export function useRemoteConfig() {
         if (cancelled) {
           return;
         }
-        setConfig(loaded);
-        setDraft(loaded);
+        const normalized = {
+          ...DEFAULT_REMOTE_CONFIG,
+          ...loaded,
+          importsFolderPath: loaded.importsFolderPath ?? "",
+          importsAfterAction: normalizeImportsAfterAction(
+            loaded.importsAfterAction,
+          ),
+        };
+        setConfig(normalized);
+        setDraft(normalized);
         setError(null);
       })
       .catch((err) => {
@@ -65,6 +74,8 @@ export function useRemoteConfig() {
         ...draft,
         baseUrl: draft.baseUrl.trim(),
         apiKey: draft.apiKey.trim(),
+        importsFolderPath: draft.importsFolderPath.trim(),
+        importsAfterAction: normalizeImportsAfterAction(draft.importsAfterAction),
         cacheTtlDays:
           Number.isFinite(draft.cacheTtlDays) && draft.cacheTtlDays > 0
             ? Math.floor(draft.cacheTtlDays)
@@ -108,7 +119,9 @@ export function useRemoteConfig() {
     draft.enabled !== config.enabled ||
     draft.baseUrl !== config.baseUrl ||
     draft.apiKey !== config.apiKey ||
-    draft.cacheTtlDays !== config.cacheTtlDays;
+    draft.cacheTtlDays !== config.cacheTtlDays ||
+    draft.importsFolderPath !== config.importsFolderPath ||
+    draft.importsAfterAction !== config.importsAfterAction;
 
   return {
     ready,

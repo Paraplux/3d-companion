@@ -1,8 +1,16 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import { useRemoteConfig } from "@/hooks/useRemoteConfig";
+import type { ImportsAfterAction } from "@/types/remoteConfig";
 
 type CloudConnectionSectionProps = {
   remote: ReturnType<typeof useRemoteConfig>;
 };
+
+const afterActionOptions: Array<{ value: ImportsAfterAction; label: string }> = [
+  { value: "move", label: "Move to Imported/" },
+  { value: "keep", label: "Keep in folder" },
+  { value: "delete", label: "Delete local file" },
+];
 
 export function CloudConnectionSection({ remote }: CloudConnectionSectionProps) {
   const {
@@ -19,6 +27,18 @@ export function CloudConnectionSection({ remote }: CloudConnectionSectionProps) 
     save,
     test,
   } = remote;
+
+  async function pickImportsFolder() {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Choose Bambu / MakerWorld downloads folder",
+    });
+    if (selected === null || Array.isArray(selected)) {
+      return;
+    }
+    updateDraft({ importsFolderPath: selected });
+  }
 
   if (!ready) {
     return (
@@ -115,6 +135,57 @@ export function CloudConnectionSection({ remote }: CloudConnectionSectionProps) 
           />
           <span className="settings-field__hint">
             Downloaded models stay on this Mac for this many days after last open.
+          </span>
+        </label>
+
+        <div className="settings-field">
+          <span className="settings-field__label">Imports folder</span>
+          <div className="settings-field__row">
+            <input
+              className="settings-field__input"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="/Users/you/BambuStudio/Downloads"
+              value={draft.importsFolderPath}
+              onChange={(event) =>
+                updateDraft({ importsFolderPath: event.target.value })
+              }
+            />
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => void pickImportsFolder()}
+            >
+              Browse…
+            </button>
+          </div>
+          <span className="settings-field__hint">
+            Bambu / MakerWorld download folder. Files listed under Imports can be
+            sent to the cloud. Subfolder <code>Imported/</code> is ignored when
+            listing.
+          </span>
+        </div>
+
+        <label className="settings-field">
+          <span className="settings-field__label">After import</span>
+          <select
+            className="settings-field__input"
+            value={draft.importsAfterAction}
+            onChange={(event) =>
+              updateDraft({
+                importsAfterAction: event.target.value as ImportsAfterAction,
+              })
+            }
+          >
+            {afterActionOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <span className="settings-field__hint">
+            What to do with the local file after a successful cloud upload.
           </span>
         </label>
       </div>
