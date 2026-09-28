@@ -92,6 +92,7 @@ export function useRemoteConfig() {
           importsAfterAction: normalizeImportsAfterAction(
             loaded.importsAfterAction,
           ),
+          autoSyncOnReturn: Boolean(loaded.autoSyncOnReturn),
         };
         setConfig(normalized);
         setDraft(normalized);
@@ -220,7 +221,8 @@ export function useRemoteConfig() {
     connectionDirty ||
     draft.cacheTtlDays !== config.cacheTtlDays ||
     draft.importsFolderPath !== config.importsFolderPath ||
-    draft.importsAfterAction !== config.importsAfterAction;
+    draft.importsAfterAction !== config.importsAfterAction ||
+    draft.autoSyncOnReturn !== config.autoSyncOnReturn;
 
   return {
     ready,

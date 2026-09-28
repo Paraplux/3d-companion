@@ -26,6 +26,11 @@ export type RemoteConfig = {
    * - delete: remove the local file
    */
   importsAfterAction: ImportsAfterAction;
+  /**
+   * After opening a cloud file in Bambu Studio, automatically push the local
+   * cache back to the cloud when returning to 3D Companion.
+   */
+  autoSyncOnReturn: boolean;
 };
 
 export type RemoteConnectionTestResult = {
@@ -94,6 +99,7 @@ export const DEFAULT_REMOTE_CONFIG: RemoteConfig = {
   cacheTtlDays: 7,
   importsFolderPath: "",
   importsAfterAction: "move",
+  autoSyncOnReturn: false,
 };
 
 export function isRemoteConfigured(config: RemoteConfig): boolean {

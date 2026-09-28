@@ -29,6 +29,9 @@ pub struct RemoteConfig {
     /// After a successful cloud import: `keep` | `move` (to Imported/) | `delete`.
     #[serde(default = "default_imports_after_action")]
     pub imports_after_action: String,
+    /// After editing in Bambu Studio, auto `PUT` replace when returning to the app.
+    #[serde(default)]
+    pub auto_sync_on_return: bool,
 }
 
 impl Default for RemoteConfig {
@@ -40,6 +43,7 @@ impl Default for RemoteConfig {
             cache_ttl_days: DEFAULT_CACHE_TTL_DAYS,
             imports_folder_path: String::new(),
             imports_after_action: default_imports_after_action(),
+            auto_sync_on_return: false,
         }
     }
 }
@@ -134,6 +138,7 @@ mod tests {
             cache_ttl_days: 7,
             imports_folder_path: String::new(),
             imports_after_action: "move".into(),
+            auto_sync_on_return: false,
         };
         assert_eq!(config.api_origin().unwrap(), "https://api.example.com");
         assert_eq!(

@@ -171,6 +171,26 @@ export function CloudConnectionSection({ remote }: CloudConnectionSectionProps) 
           </span>
         </label>
 
+        <label className="settings-toggle settings-toggle--field">
+          <input
+            type="checkbox"
+            checked={draft.autoSyncOnReturn}
+            onChange={(event) =>
+              updateDraft({ autoSyncOnReturn: event.target.checked })
+            }
+          />
+          <span className="settings-toggle__copy">
+            <span className="settings-field__label">
+              Auto sync after Bambu
+            </span>
+            <span className="settings-field__hint">
+              When you return to 3D Companion after editing a cloud file in
+              Bambu Studio, push the local cache to the cloud automatically
+              (same as Sync to cloud). Unchanged files are skipped.
+            </span>
+          </span>
+        </label>
+
         <div className="settings-field">
           <span className="settings-field__label">Download cache</span>
           <div className="settings-field__row">

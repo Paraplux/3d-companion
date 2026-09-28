@@ -140,13 +140,13 @@ function FavoritesIcon() {
 function SettingsIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.4" />
       <path
-        d="M8 1.8v1.4M8 12.8v1.4M1.8 8h1.4M12.8 8h1.4M3.3 3.3l1 1M11.7 11.7l1 1M12.7 3.3l-1 1M4.3 11.7l-1 1"
+        d="M6.4 1.7h3.2l.3 1.2c.35.12.68.3.98.52l1.2-.45 1.6 1.6-.45 1.2c.22.3.4.63.52.98l1.2.3v3.2l-1.2.3c-.12.35-.3.68-.52.98l.45 1.2-1.6 1.6-1.2-.45a4.1 4.1 0 0 1-.98.52l-.3 1.2H6.4l-.3-1.2a4.1 4.1 0 0 1-.98-.52l-1.2.45-1.6-1.6.45-1.2a4.1 4.1 0 0 1-.52-.98L1.05 8.8V5.6l1.2-.3c.12-.35.3-.68.52-.98l-.45-1.2 1.6-1.6 1.2.45c.3-.22.63-.4.98-.52l.3-1.2Z"
         stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
       />
+      <circle cx="8" cy="8" r="2.15" stroke="currentColor" strokeWidth="1.3" />
     </svg>
   );
 }

@@ -318,7 +318,8 @@ export function ModelDetailPage() {
           <p className="model-detail__status" role="status">
             Stored in the cloud. Open in Bambu to edit the local cache, then
             Sync to cloud to push a new version (same file, projects stay
-            linked).
+            linked). Enable Auto sync after Bambu in Settings to do this
+            automatically when you return.
           </p>
         ) : null}
         {file.analysisStatus === "error" && !isRemote ? (

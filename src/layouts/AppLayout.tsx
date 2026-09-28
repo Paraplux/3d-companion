@@ -1,4 +1,5 @@
 import { Outlet } from "react-router-dom";
+import { CloudAutoSync } from "@/components/cloud/CloudAutoSync";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { WindowDragRegion } from "@/components/layout/WindowDragRegion";
 import { BackgroundTaskIndicator } from "@/components/ui/BackgroundTaskIndicator";
@@ -14,6 +15,7 @@ export function AppLayout() {
         </div>
       </main>
       <BackgroundTaskIndicator />
+      <CloudAutoSync />
     </div>
   );
 }

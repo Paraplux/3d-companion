@@ -5,6 +5,7 @@ import { openInBambuStudio, toUserError } from "@/lib/libraryApi";
 import { canOpenInBambuStudio } from "@/lib/bambuStudio";
 import { returnActionLabel } from "@/lib/navigationReturn";
 import { openRemoteInBambuStudio } from "@/lib/remoteApi";
+import { markOpenedInBambu } from "@/lib/pendingBambuSync";
 import { isRemoteLibraryFile } from "@/lib/remoteFiles";
 import type { LibraryFile } from "@/types/library";
 
@@ -44,6 +45,7 @@ export function OpenInBambuStudioButton({ file }: OpenInBambuStudioButtonProps) 
           file.name,
           file.extension,
         );
+        markOpenedInBambu(file.libraryFileId);
       } else {
         setPhase("opening");
         await openInBambuStudio(file.libraryFileId);
