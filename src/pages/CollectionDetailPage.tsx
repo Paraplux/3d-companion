@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ask } from "@tauri-apps/plugin-dialog";
+import { AddModelsButton } from "@/components/library/AddModelsButton";
 import { FileCard } from "@/components/library/FileCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -43,6 +44,8 @@ export function CollectionDetailPage() {
     }
     return ids;
   }, [collectionId, fileCollectionMap]);
+
+  const memberIds = useMemo(() => new Set(fileIds), [fileIds]);
 
   const models = useMemo(
     () => resolveCollectionFiles(files, fileIds),
@@ -130,6 +133,14 @@ export function CollectionDetailPage() {
   }
 
   const subtitle = formatCollectionCount(collection.fileCount);
+  const addButton = (
+    <AddModelsButton
+      kind="collection"
+      collectionId={collection.id}
+      name={collection.name}
+      memberIds={memberIds}
+    />
+  );
 
   return (
     <section className="page page--library">
@@ -162,6 +173,7 @@ export function CollectionDetailPage() {
               </>
             ) : (
               <>
+                {addButton}
                 <button
                   type="button"
                   className="button button--ghost"
@@ -243,12 +255,8 @@ export function CollectionDetailPage() {
       {models.length === 0 ? (
         <EmptyState
           title="No models in this collection"
-          description="Add models from their detail page, or keep this collection as a placeholder for later."
-          action={
-            <Link className="button button--primary" to="/library">
-              Browse Library
-            </Link>
-          }
+          description="Add models from your library, or keep this collection as a placeholder for later."
+          action={addButton}
         />
       ) : (
         <div className="library-grid">

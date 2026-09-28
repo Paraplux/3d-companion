@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ask } from "@tauri-apps/plugin-dialog";
+import { AddModelsButton } from "@/components/library/AddModelsButton";
 import { FileCard } from "@/components/library/FileCard";
-import { ProjectFilePicker } from "@/components/library/ProjectFilePicker";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useLibrary } from "@/hooks/useLibrary";
@@ -131,6 +131,14 @@ export function ProjectDetailPage() {
   }
 
   const subtitle = formatProjectCount(project.fileCount);
+  const addButton = (
+    <AddModelsButton
+      kind="project"
+      projectId={project.id}
+      name={project.name}
+      memberIds={memberIds}
+    />
+  );
 
   return (
     <section className="page page--library">
@@ -163,7 +171,7 @@ export function ProjectDetailPage() {
               </>
             ) : (
               <>
-                <ProjectFilePicker projectId={project.id} memberIds={memberIds} />
+                {addButton}
                 <button
                   type="button"
                   className="button button--ghost"
@@ -267,9 +275,7 @@ export function ProjectDetailPage() {
         <EmptyState
           title="No models in this project"
           description="Add models from your library, or keep this project as a placeholder for later."
-          action={
-            <ProjectFilePicker projectId={project.id} memberIds={memberIds} />
-          }
+          action={addButton}
         />
       ) : (
         <div className="library-grid">

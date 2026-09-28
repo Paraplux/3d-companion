@@ -169,6 +169,11 @@ type LibraryContextValue = {
     libraryFileId: LibraryFileId,
     collectionId: string,
   ) => Promise<void>;
+  /** Add several models in one shot (single cloud doc commit when possible). */
+  addFilesToCollection: (
+    libraryFileIds: LibraryFileId[],
+    collectionId: string,
+  ) => Promise<void>;
   removeFileFromCollection: (
     libraryFileId: LibraryFileId,
     collectionId: string,
@@ -187,6 +192,11 @@ type LibraryContextValue = {
   deleteProject: (projectId: string) => Promise<void>;
   addFileToProject: (
     libraryFileId: LibraryFileId,
+    projectId: string,
+  ) => Promise<void>;
+  /** Add several models in one shot (single cloud doc commit when possible). */
+  addFilesToProject: (
+    libraryFileIds: LibraryFileId[],
     projectId: string,
   ) => Promise<void>;
   removeFileFromProject: (
@@ -1280,6 +1290,61 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [clearError, cloudMode, commitCloudDoc, refreshCollections],
   );
 
+  const addFilesToCollection = useCallback(
+    async (libraryFileIds: LibraryFileId[], collectionId: string) => {
+      const unique = [...new Set(libraryFileIds)];
+      if (unique.length === 0) {
+        return;
+      }
+      clearError();
+      if (cloudMode) {
+        try {
+          await commitCloudDoc((doc) => {
+            let next = doc;
+            for (const libraryFileId of unique) {
+              next = docAddFileToCollection(next, libraryFileId, collectionId);
+            }
+            return { doc: next, result: undefined };
+          });
+        } catch (err) {
+          setError(
+            toUserError(err, "Could not add those models to the collection."),
+          );
+          throw err;
+        }
+        return;
+      }
+
+      setFileCollectionMap((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const libraryFileId of unique) {
+          const existing = next[libraryFileId] ?? [];
+          if (existing.includes(collectionId)) {
+            continue;
+          }
+          next[libraryFileId] = [...existing, collectionId];
+          changed = true;
+        }
+        return changed ? next : current;
+      });
+
+      try {
+        for (const libraryFileId of unique) {
+          await addFileToCollectionApi(libraryFileId, collectionId);
+        }
+        await refreshCollections();
+      } catch (err) {
+        await refreshCollections();
+        setError(
+          toUserError(err, "Could not add those models to the collection."),
+        );
+        throw err;
+      }
+    },
+    [clearError, cloudMode, commitCloudDoc, refreshCollections],
+  );
+
   const removeFileFromCollection = useCallback(
     async (libraryFileId: LibraryFileId, collectionId: string) => {
       clearError();
@@ -1429,6 +1494,57 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         await refreshProjects();
         setError(toUserError(err, "Could not add that model to the project."));
+        throw err;
+      }
+    },
+    [clearError, cloudMode, commitCloudDoc, refreshProjects],
+  );
+
+  const addFilesToProject = useCallback(
+    async (libraryFileIds: LibraryFileId[], projectId: string) => {
+      const unique = [...new Set(libraryFileIds)];
+      if (unique.length === 0) {
+        return;
+      }
+      clearError();
+      if (cloudMode) {
+        try {
+          await commitCloudDoc((doc) => {
+            let next = doc;
+            for (const libraryFileId of unique) {
+              next = docAddFileToProject(next, libraryFileId, projectId);
+            }
+            return { doc: next, result: undefined };
+          });
+        } catch (err) {
+          setError(toUserError(err, "Could not add those models to the project."));
+          throw err;
+        }
+        return;
+      }
+
+      setFileProjectMap((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const libraryFileId of unique) {
+          const existing = next[libraryFileId] ?? [];
+          if (existing.includes(projectId)) {
+            continue;
+          }
+          next[libraryFileId] = [...existing, projectId];
+          changed = true;
+        }
+        return changed ? next : current;
+      });
+
+      try {
+        for (const libraryFileId of unique) {
+          await addFileToProjectApi(libraryFileId, projectId);
+        }
+        await refreshProjects();
+      } catch (err) {
+        await refreshProjects();
+        setError(toUserError(err, "Could not add those models to the project."));
         throw err;
       }
     },
@@ -1596,6 +1712,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       renameCollection,
       deleteCollection,
       addFileToCollection,
+      addFilesToCollection,
       removeFileFromCollection,
       addCollectionNameToFile,
       projectsForLibraryFile,
@@ -1603,6 +1720,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       updateProject,
       deleteProject,
       addFileToProject,
+      addFilesToProject,
       removeFileFromProject,
       addProjectNameToFile,
       hasNote,
@@ -1655,6 +1773,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       renameCollection,
       deleteCollection,
       addFileToCollection,
+      addFilesToCollection,
       removeFileFromCollection,
       addCollectionNameToFile,
       projectsForLibraryFile,
@@ -1662,6 +1781,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       updateProject,
       deleteProject,
       addFileToProject,
+      addFilesToProject,
       removeFileFromProject,
       addProjectNameToFile,
       hasNote,
