@@ -80,6 +80,13 @@ export type RemoteCacheMaintenanceResult = RemoteCacheStats & {
   removedBytes: number;
 };
 
+export type RemoteThumbnailBackfillResult = {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+};
+
 export const DEFAULT_REMOTE_CONFIG: RemoteConfig = {
   enabled: false,
   baseUrl: "",

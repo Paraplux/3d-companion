@@ -80,6 +80,7 @@ import {
   getRemoteFiles,
   getRemoteLibrary,
   putRemoteLibrary,
+  REMOTE_CATALOG_CHANGED_EVENT,
   REMOTE_CONFIG_CHANGED_EVENT,
   renameRemoteFile,
   replaceRemoteFile,
@@ -369,15 +370,14 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   }, [applyOrgState]);
 
   useEffect(() => {
-    const onRemoteConfigChanged = () => {
+    const onRemoteChanged = () => {
       setReloadToken((value) => value + 1);
     };
-    window.addEventListener(REMOTE_CONFIG_CHANGED_EVENT, onRemoteConfigChanged);
+    window.addEventListener(REMOTE_CONFIG_CHANGED_EVENT, onRemoteChanged);
+    window.addEventListener(REMOTE_CATALOG_CHANGED_EVENT, onRemoteChanged);
     return () => {
-      window.removeEventListener(
-        REMOTE_CONFIG_CHANGED_EVENT,
-        onRemoteConfigChanged,
-      );
+      window.removeEventListener(REMOTE_CONFIG_CHANGED_EVENT, onRemoteChanged);
+      window.removeEventListener(REMOTE_CATALOG_CHANGED_EVENT, onRemoteChanged);
     };
   }, []);
 

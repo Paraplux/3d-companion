@@ -10,12 +10,19 @@ import type {
   ImportCandidate,
   RemoteCacheMaintenanceResult,
   RemoteCacheStats,
+  RemoteThumbnailBackfillResult,
 } from "@/types/remoteConfig";
 
 export const REMOTE_CONFIG_CHANGED_EVENT = "remote-config-changed";
+export const REMOTE_CATALOG_CHANGED_EVENT = "remote-catalog-changed";
 
 export function notifyRemoteConfigChanged(): void {
   window.dispatchEvent(new Event(REMOTE_CONFIG_CHANGED_EVENT));
+}
+
+/** Ask the library to re-fetch the cloud catalog (e.g. after thumbnail backfill). */
+export function notifyRemoteCatalogChanged(): void {
+  window.dispatchEvent(new Event(REMOTE_CATALOG_CHANGED_EVENT));
 }
 
 export function getRemoteConfig(): Promise<RemoteConfig> {
@@ -199,4 +206,9 @@ export function purgeRemoteCache(): Promise<RemoteCacheMaintenanceResult> {
 /** Wipe the entire local cloud download + thumbnail cache. */
 export function clearRemoteCache(): Promise<RemoteCacheMaintenanceResult> {
   return invoke("clear_remote_cache");
+}
+
+/** Ask the gateway to generate missing catalog thumbnails (3MF with embedded preview). */
+export function backfillRemoteThumbnails(): Promise<RemoteThumbnailBackfillResult> {
+  return invoke("backfill_remote_thumbnails");
 }

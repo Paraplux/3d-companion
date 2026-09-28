@@ -21,15 +21,21 @@ export function CloudConnectionSection({ remote }: CloudConnectionSectionProps) 
     saving,
     testing,
     clearingCache,
+    backfillingThumbs,
     cacheStats,
     error,
     testResult,
+    backfillMessage,
     configured,
+    savedConfigured,
+    connectionDirty,
     clearError,
+    clearBackfillMessage,
     updateDraft,
     save,
     test,
     clearCache,
+    backfillThumbnails,
   } = remote;
 
   async function pickImportsFolder() {
@@ -98,6 +104,19 @@ export function CloudConnectionSection({ remote }: CloudConnectionSectionProps) 
           role="status"
         >
           <p>{testResult.message}</p>
+        </div>
+      ) : null}
+
+      {backfillMessage && !error ? (
+        <div className="banner banner--success" role="status">
+          <p>{backfillMessage}</p>
+          <button
+            type="button"
+            className="banner__dismiss"
+            onClick={clearBackfillMessage}
+          >
+            Dismiss
+          </button>
         </div>
       ) : null}
 
@@ -173,6 +192,34 @@ export function CloudConnectionSection({ remote }: CloudConnectionSectionProps) 
           <span className="settings-field__hint">
             Local copies of cloud models and thumbnails used for preview and
             Bambu. Clearing frees disk space; files re-download on next open.
+          </span>
+        </div>
+
+        <div className="settings-field">
+          <span className="settings-field__label">Server thumbnails</span>
+          <div className="settings-field__row">
+            <p className="settings-cache-size">
+              Fill missing 3MF previews on the gateway
+            </p>
+            <button
+              type="button"
+              className="button button--ghost"
+              disabled={
+                !savedConfigured ||
+                connectionDirty ||
+                backfillingThumbs ||
+                saving ||
+                testing
+              }
+              onClick={() => void backfillThumbnails()}
+            >
+              {backfillingThumbs ? "Regenerating…" : "Regenerate thumbnails"}
+            </button>
+          </div>
+          <span className="settings-field__hint">
+            Calls the server backfill once for catalog files missing a preview
+            (3MF with embedded image). Save URL/key first if you changed them.
+            Can take a while on a large catalog.
           </span>
         </div>
 

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { toUserError } from "@/lib/libraryApi";
 import {
+  backfillRemoteThumbnails,
   clearRemoteCache,
   getRemoteCacheStats,
   getRemoteConfig,
+  notifyRemoteCatalogChanged,
   notifyRemoteConfigChanged,
   saveRemoteConfig,
   testRemoteConnection,
@@ -17,6 +19,40 @@ import {
   type RemoteConnectionTestResult,
 } from "@/types/remoteConfig";
 
+function formatBackfillMessage(result: {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+}): string {
+  const parts: string[] = [];
+  if (result.succeeded > 0) {
+    parts.push(
+      result.succeeded === 1
+        ? "1 thumbnail generated"
+        : `${result.succeeded} thumbnails generated`,
+    );
+  }
+  if (result.skipped > 0) {
+    parts.push(
+      result.skipped === 1
+        ? "1 skipped (unsupported / no preview)"
+        : `${result.skipped} skipped (unsupported / no preview)`,
+    );
+  }
+  if (result.failed > 0) {
+    parts.push(
+      result.failed === 1 ? "1 failed" : `${result.failed} failed`,
+    );
+  }
+  if (parts.length === 0) {
+    return result.processed === 0
+      ? "Nothing to backfill — every catalog file already has a thumbnail or none is possible."
+      : `Backfill finished (${result.processed} processed).`;
+  }
+  return parts.join(" · ");
+}
+
 export function useRemoteConfig() {
   const [config, setConfig] = useState<RemoteConfig>(DEFAULT_REMOTE_CONFIG);
   const [draft, setDraft] = useState<RemoteConfig>(DEFAULT_REMOTE_CONFIG);
@@ -24,11 +60,13 @@ export function useRemoteConfig() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
+  const [backfillingThumbs, setBackfillingThumbs] = useState(false);
   const [cacheStats, setCacheStats] = useState<RemoteCacheStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<RemoteConnectionTestResult | null>(
     null,
   );
+  const [backfillMessage, setBackfillMessage] = useState<string | null>(null);
 
   const refreshCacheStats = useCallback(async () => {
     try {
@@ -85,6 +123,7 @@ export function useRemoteConfig() {
   const updateDraft = useCallback((patch: Partial<RemoteConfig>) => {
     setDraft((current) => ({ ...current, ...patch }));
     setTestResult(null);
+    setBackfillMessage(null);
   }, []);
 
   const save = useCallback(async () => {
@@ -119,6 +158,7 @@ export function useRemoteConfig() {
   const test = useCallback(async () => {
     setTesting(true);
     setError(null);
+    setBackfillMessage(null);
     try {
       const result = await testRemoteConnection({
         ...draft,
@@ -153,10 +193,31 @@ export function useRemoteConfig() {
     }
   }, []);
 
+  const backfillThumbnails = useCallback(async () => {
+    setBackfillingThumbs(true);
+    setError(null);
+    setBackfillMessage(null);
+    setTestResult(null);
+    try {
+      const result = await backfillRemoteThumbnails();
+      setBackfillMessage(formatBackfillMessage(result));
+      notifyRemoteCatalogChanged();
+      return result;
+    } catch (err) {
+      const message = toUserError(err, "Could not regenerate thumbnails.");
+      setError(message);
+      throw err;
+    } finally {
+      setBackfillingThumbs(false);
+    }
+  }, []);
+
+  const connectionDirty =
+    draft.baseUrl !== config.baseUrl || draft.apiKey !== config.apiKey;
+
   const dirty =
     draft.enabled !== config.enabled ||
-    draft.baseUrl !== config.baseUrl ||
-    draft.apiKey !== config.apiKey ||
+    connectionDirty ||
     draft.cacheTtlDays !== config.cacheTtlDays ||
     draft.importsFolderPath !== config.importsFolderPath ||
     draft.importsAfterAction !== config.importsAfterAction;
@@ -166,18 +227,24 @@ export function useRemoteConfig() {
     config,
     draft,
     dirty,
+    connectionDirty,
     saving,
     testing,
     clearingCache,
+    backfillingThumbs,
     cacheStats,
     error,
     testResult,
+    backfillMessage,
     configured: isRemoteConfigured(draft),
+    savedConfigured: isRemoteConfigured(config),
     clearError: () => setError(null),
+    clearBackfillMessage: () => setBackfillMessage(null),
     updateDraft,
     save,
     test,
     clearCache,
+    backfillThumbnails,
     refreshCacheStats,
   };
 }

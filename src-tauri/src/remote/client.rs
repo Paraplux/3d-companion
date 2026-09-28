@@ -53,6 +53,19 @@ pub struct RemoteLibraryResponse {
     pub etag: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteThumbnailBackfillResult {
+    #[serde(default)]
+    pub processed: u32,
+    #[serde(default)]
+    pub succeeded: u32,
+    #[serde(default)]
+    pub failed: u32,
+    #[serde(default)]
+    pub skipped: u32,
+}
+
 fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -183,6 +196,48 @@ pub async fn list_files(config: &RemoteConfig) -> Result<Vec<RemoteFileSummary>,
         .await
         .map_err(|error| format!("Could not parse file list: {error}"))?;
     Ok(payload.files)
+}
+
+/// Generate missing server-side thumbnails for catalog entries without one.
+/// Can take a while on large libraries (synchronous on the gateway).
+pub async fn backfill_thumbnails(
+    config: &RemoteConfig,
+) -> Result<RemoteThumbnailBackfillResult, String> {
+    ensure_ready(config)?;
+
+    let client = reqwest::Client::builder()
+        // Gateway walks the catalog synchronously — allow a long window.
+        .timeout(std::time::Duration::from_secs(600))
+        .build()
+        .map_err(|error| format!("Could not create HTTP client: {error}"))?;
+
+    let response = client
+        .post(config.v1_url("thumbnails/backfill")?)
+        .headers(auth_headers(&config.api_key)?)
+        .send()
+        .await
+        .map_err(|error| format!("Could not start thumbnail backfill: {error}"))?;
+
+    let status = response.status();
+    if status.as_u16() == 409 {
+        return Err("A thumbnail backfill is already running on the server.".into());
+    }
+    if status.as_u16() == 401 || status.as_u16() == 403 {
+        return Err("API key rejected by the server.".into());
+    }
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Thumbnail backfill failed (HTTP {}). {}",
+            status.as_u16(),
+            truncate(&body, 160)
+        ));
+    }
+
+    response
+        .json::<RemoteThumbnailBackfillResult>()
+        .await
+        .map_err(|error| format!("Could not parse backfill response: {error}"))
 }
 
 pub async fn get_library(config: &RemoteConfig) -> Result<RemoteLibraryResponse, String> {

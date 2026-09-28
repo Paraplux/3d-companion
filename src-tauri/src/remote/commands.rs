@@ -6,9 +6,10 @@ use super::cache::{
     clear_cache, measure_cache, purge_expired, RemoteCacheMaintenanceResult, RemoteCacheStats,
 };
 use super::client::{
-    delete_file, download_file_to_path, download_thumbnail, ensure_cached_file, find_cached_file,
-    get_library, list_files, put_library, rename_file, replace_file, test_connection, upload_file,
-    RemoteConnectionTestResult, RemoteFileSummary, RemoteIngestResult, RemoteLibraryResponse,
+    backfill_thumbnails, delete_file, download_file_to_path, download_thumbnail, ensure_cached_file,
+    find_cached_file, get_library, list_files, put_library, rename_file, replace_file,
+    test_connection, upload_file, RemoteConnectionTestResult, RemoteFileSummary,
+    RemoteIngestResult, RemoteLibraryResponse, RemoteThumbnailBackfillResult,
 };
 use super::config::{load_config, save_config, RemoteConfig};
 use super::imports::{
@@ -169,6 +170,14 @@ pub async fn test_remote_connection(
         None => load_config(&app)?,
     };
     test_connection(&effective).await
+}
+
+#[tauri::command]
+pub async fn backfill_remote_thumbnails(
+    app: AppHandle,
+) -> Result<RemoteThumbnailBackfillResult, String> {
+    let config = load_config(&app)?;
+    backfill_thumbnails(&config).await
 }
 
 #[tauri::command]
