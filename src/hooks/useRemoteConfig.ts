@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { toUserError } from "@/lib/libraryApi";
 import {
+  clearRemoteCache,
+  getRemoteCacheStats,
   getRemoteConfig,
   notifyRemoteConfigChanged,
   saveRemoteConfig,
@@ -10,6 +12,7 @@ import {
   DEFAULT_REMOTE_CONFIG,
   isRemoteConfigured,
   normalizeImportsAfterAction,
+  type RemoteCacheStats,
   type RemoteConfig,
   type RemoteConnectionTestResult,
 } from "@/types/remoteConfig";
@@ -20,10 +23,21 @@ export function useRemoteConfig() {
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
+  const [cacheStats, setCacheStats] = useState<RemoteCacheStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<RemoteConnectionTestResult | null>(
     null,
   );
+
+  const refreshCacheStats = useCallback(async () => {
+    try {
+      const stats = await getRemoteCacheStats();
+      setCacheStats(stats);
+    } catch {
+      setCacheStats(null);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +75,13 @@ export function useRemoteConfig() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    void refreshCacheStats();
+  }, [ready, refreshCacheStats]);
+
   const updateDraft = useCallback((patch: Partial<RemoteConfig>) => {
     setDraft((current) => ({ ...current, ...patch }));
     setTestResult(null);
@@ -84,6 +105,7 @@ export function useRemoteConfig() {
       setConfig(saved);
       setDraft(saved);
       notifyRemoteConfigChanged();
+      await refreshCacheStats();
       return saved;
     } catch (err) {
       const message = toUserError(err, "Could not save cloud settings.");
@@ -92,7 +114,7 @@ export function useRemoteConfig() {
     } finally {
       setSaving(false);
     }
-  }, [draft]);
+  }, [draft, refreshCacheStats]);
 
   const test = useCallback(async () => {
     setTesting(true);
@@ -115,6 +137,22 @@ export function useRemoteConfig() {
     }
   }, [draft]);
 
+  const clearCache = useCallback(async () => {
+    setClearingCache(true);
+    setError(null);
+    try {
+      const result = await clearRemoteCache();
+      setCacheStats({ bytes: result.bytes, fileCount: result.fileCount });
+      return result;
+    } catch (err) {
+      const message = toUserError(err, "Could not clear download cache.");
+      setError(message);
+      throw err;
+    } finally {
+      setClearingCache(false);
+    }
+  }, []);
+
   const dirty =
     draft.enabled !== config.enabled ||
     draft.baseUrl !== config.baseUrl ||
@@ -130,6 +168,8 @@ export function useRemoteConfig() {
     dirty,
     saving,
     testing,
+    clearingCache,
+    cacheStats,
     error,
     testResult,
     configured: isRemoteConfigured(draft),
@@ -137,5 +177,7 @@ export function useRemoteConfig() {
     updateDraft,
     save,
     test,
+    clearCache,
+    refreshCacheStats,
   };
 }

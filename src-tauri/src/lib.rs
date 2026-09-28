@@ -19,12 +19,13 @@ use library::{
     upsert_file_note, LibraryState,
 };
 use remote::{
-    analyze_cached_remote_file, cache_remote_file, delete_remote_file, finalize_import_candidate,
-    get_import_preview, get_remote_config, get_remote_files, get_remote_library,
-    get_remote_model_geometry, get_remote_thumbnail, list_import_candidates,
-    open_remote_in_bambu_studio, prepare_remote_file_preview, put_remote_library,
-    rename_remote_file, replace_remote_file, save_remote_config, save_remote_file,
-    test_remote_connection, upload_remote_file,
+    analyze_cached_remote_file, cache_remote_file, clear_remote_cache, delete_remote_file,
+    finalize_import_candidate, get_import_preview, get_remote_cache_stats, get_remote_config,
+    get_remote_files, get_remote_library, get_remote_model_geometry, get_remote_thumbnail,
+    list_import_candidates, open_remote_in_bambu_studio, prepare_remote_file_preview,
+    purge_remote_cache, put_remote_library, rename_remote_file, replace_remote_file,
+    run_startup_cache_gc, save_remote_config, save_remote_file, test_remote_connection,
+    upload_remote_file,
 };
 use tauri::Manager;
 
@@ -38,6 +39,12 @@ pub fn run() {
             let state = LibraryState::new(app.handle(), db)
                 .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
             app.manage(state);
+
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                run_startup_cache_gc(&handle);
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -112,6 +119,9 @@ pub fn run() {
             list_import_candidates,
             finalize_import_candidate,
             get_import_preview,
+            get_remote_cache_stats,
+            purge_remote_cache,
+            clear_remote_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

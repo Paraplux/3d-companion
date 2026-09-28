@@ -1,5 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useRemoteConfig } from "@/hooks/useRemoteConfig";
+import { formatBytes } from "@/lib/format";
 import type { ImportsAfterAction } from "@/types/remoteConfig";
 
 type CloudConnectionSectionProps = {
@@ -19,6 +20,8 @@ export function CloudConnectionSection({ remote }: CloudConnectionSectionProps) 
     dirty,
     saving,
     testing,
+    clearingCache,
+    cacheStats,
     error,
     testResult,
     configured,
@@ -26,6 +29,7 @@ export function CloudConnectionSection({ remote }: CloudConnectionSectionProps) 
     updateDraft,
     save,
     test,
+    clearCache,
   } = remote;
 
   async function pickImportsFolder() {
@@ -47,6 +51,15 @@ export function CloudConnectionSection({ remote }: CloudConnectionSectionProps) 
       </section>
     );
   }
+
+  const cacheLabel =
+    cacheStats == null
+      ? "Measuring…"
+      : cacheStats.fileCount === 0
+        ? "Empty"
+        : `${formatBytes(cacheStats.bytes)} · ${cacheStats.fileCount} file${
+            cacheStats.fileCount === 1 ? "" : "s"
+          }`;
 
   return (
     <section className="settings-block">
@@ -134,9 +147,34 @@ export function CloudConnectionSection({ remote }: CloudConnectionSectionProps) 
             }
           />
           <span className="settings-field__hint">
-            Downloaded models stay on this Mac for this many days after last open.
+            Downloaded models stay on this Mac for this many days after last
+            open. Expired files are deleted automatically on launch.
           </span>
         </label>
+
+        <div className="settings-field">
+          <span className="settings-field__label">Download cache</span>
+          <div className="settings-field__row">
+            <p className="settings-cache-size">{cacheLabel}</p>
+            <button
+              type="button"
+              className="button button--ghost"
+              disabled={
+                clearingCache ||
+                saving ||
+                cacheStats == null ||
+                cacheStats.fileCount === 0
+              }
+              onClick={() => void clearCache()}
+            >
+              {clearingCache ? "Clearing…" : "Clear cache"}
+            </button>
+          </div>
+          <span className="settings-field__hint">
+            Local copies of cloud models and thumbnails used for preview and
+            Bambu. Clearing frees disk space; files re-download on next open.
+          </span>
+        </div>
 
         <div className="settings-field">
           <span className="settings-field__label">Imports folder</span>

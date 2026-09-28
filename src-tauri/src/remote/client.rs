@@ -509,10 +509,15 @@ pub async fn download_thumbnail(
     std::fs::create_dir_all(cache_dir)
         .map_err(|error| format!("Could not create thumbnail cache: {error}"))?;
 
-    // Prefer existing webp/png cache hit.
+    // Prefer existing webp/png cache hit; refresh TTL on access.
     for ext in ["webp", "png", "jpg", "jpeg"] {
         let candidate = cache_dir.join(format!("{file_id}.{ext}"));
         if candidate.is_file() {
+            if super::cache::cache_entry_expired(&candidate, config.cache_ttl_days)? {
+                let _ = std::fs::remove_file(&candidate);
+                continue;
+            }
+            let _ = super::cache::touch_file(&candidate);
             return Ok(candidate);
         }
     }
@@ -569,7 +574,7 @@ pub async fn download_thumbnail(
 }
 
 /// Look up a cached catalog object without downloading.
-/// Returns `None` when missing or expired.
+/// Returns `None` when missing or expired. Touches mtime on hit (TTL = last open).
 pub fn find_cached_file(
     file_id: &str,
     content_hash: &str,
@@ -587,9 +592,11 @@ pub fn find_cached_file(
     if !path.is_file() {
         return Ok(None);
     }
-    if cache_entry_expired(&path, ttl_days)? {
+    if super::cache::cache_entry_expired(&path, ttl_days)? {
+        let _ = std::fs::remove_file(&path);
         return Ok(None);
     }
+    let _ = super::cache::touch_file(&path);
     Ok(Some(path))
 }
 
@@ -614,8 +621,13 @@ pub async fn ensure_cached_file(
     let dir = cache_root.join(file_id).join(hash);
     let path = dir.join(&safe_name);
 
-    if path.is_file() && !cache_entry_expired(&path, config.cache_ttl_days)? {
-        return Ok(path);
+    if path.is_file() {
+        if super::cache::cache_entry_expired(&path, config.cache_ttl_days)? {
+            let _ = std::fs::remove_file(&path);
+        } else {
+            let _ = super::cache::touch_file(&path);
+            return Ok(path);
+        }
     }
 
     std::fs::create_dir_all(&dir)
@@ -626,6 +638,7 @@ pub async fn ensure_cached_file(
     tokio::fs::rename(&tmp, &path)
         .await
         .map_err(|error| format!("Could not finalize cached file: {error}"))?;
+    let _ = super::cache::touch_file(&path);
 
     Ok(path)
 }
@@ -715,22 +728,6 @@ fn sanitize_cache_filename(filename: &str) -> Result<String, String> {
         return Err("Invalid file name.".into());
     }
     Ok(base.to_string())
-}
-
-fn cache_entry_expired(path: &Path, ttl_days: u32) -> Result<bool, String> {
-    if ttl_days == 0 {
-        return Ok(false);
-    }
-    let meta = std::fs::metadata(path)
-        .map_err(|error| format!("Could not read cache metadata: {error}"))?;
-    let modified = meta
-        .modified()
-        .map_err(|error| format!("Could not read cache mtime: {error}"))?;
-    let age = std::time::SystemTime::now()
-        .duration_since(modified)
-        .unwrap_or_default();
-    let ttl = std::time::Duration::from_secs(u64::from(ttl_days) * 24 * 60 * 60);
-    Ok(age > ttl)
 }
 
 fn validate_file_id(file_id: &str) -> Result<(), String> {

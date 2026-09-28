@@ -2,6 +2,9 @@ use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
+use super::cache::{
+    clear_cache, measure_cache, purge_expired, RemoteCacheMaintenanceResult, RemoteCacheStats,
+};
 use super::client::{
     delete_file, download_file_to_path, download_thumbnail, ensure_cached_file, find_cached_file,
     get_library, list_files, put_library, rename_file, replace_file, test_connection, upload_file,
@@ -28,6 +31,29 @@ fn remote_files_cache_dir(app: &AppHandle) -> Result<std::path::PathBuf, String>
         .app_data_dir()
         .map_err(|error| format!("Could not resolve app data dir: {error}"))?
         .join("remote-files"))
+}
+
+fn remote_thumbnails_cache_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve app data dir: {error}"))?
+        .join("remote-thumbnails"))
+}
+
+fn remote_cache_roots(app: &AppHandle) -> Result<[std::path::PathBuf; 2], String> {
+    Ok([
+        remote_files_cache_dir(app)?,
+        remote_thumbnails_cache_dir(app)?,
+    ])
+}
+
+/// Best-effort GC used at startup and after TTL changes.
+pub fn purge_remote_cache_internal(app: &AppHandle) -> Result<RemoteCacheMaintenanceResult, String> {
+    let config = load_config(app)?;
+    let roots = remote_cache_roots(app)?;
+    let root_refs: Vec<&std::path::Path> = roots.iter().map(|path| path.as_path()).collect();
+    purge_expired(&root_refs, config.cache_ttl_days)
 }
 
 fn thumbnails_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -81,7 +107,28 @@ pub fn save_remote_config(app: AppHandle, config: RemoteConfig) -> Result<Remote
         .to_string();
 
     save_config(&app, &next)?;
+    // Lowering TTL should free disk promptly.
+    let _ = purge_remote_cache_internal(&app);
     Ok(next)
+}
+
+#[tauri::command]
+pub fn get_remote_cache_stats(app: AppHandle) -> Result<RemoteCacheStats, String> {
+    let roots = remote_cache_roots(&app)?;
+    let root_refs: Vec<&std::path::Path> = roots.iter().map(|path| path.as_path()).collect();
+    measure_cache(&root_refs)
+}
+
+#[tauri::command]
+pub fn purge_remote_cache(app: AppHandle) -> Result<RemoteCacheMaintenanceResult, String> {
+    purge_remote_cache_internal(&app)
+}
+
+#[tauri::command]
+pub fn clear_remote_cache(app: AppHandle) -> Result<RemoteCacheMaintenanceResult, String> {
+    let roots = remote_cache_roots(&app)?;
+    let root_refs: Vec<&std::path::Path> = roots.iter().map(|path| path.as_path()).collect();
+    clear_cache(&root_refs)
 }
 
 #[tauri::command]
@@ -251,11 +298,7 @@ pub async fn rename_remote_file(
 #[tauri::command]
 pub async fn get_remote_thumbnail(app: AppHandle, file_id: String) -> Result<String, String> {
     let config = load_config(&app)?;
-    let cache_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("Could not resolve app data dir: {error}"))?
-        .join("remote-thumbnails");
+    let cache_dir = remote_thumbnails_cache_dir(&app)?;
     let path = download_thumbnail(&config, &file_id, &cache_dir).await?;
     Ok(path.to_string_lossy().into_owned())
 }

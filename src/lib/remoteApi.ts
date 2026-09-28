@@ -8,6 +8,8 @@ import type {
   RemoteIngestResult,
   RemoteLibraryResponse,
   ImportCandidate,
+  RemoteCacheMaintenanceResult,
+  RemoteCacheStats,
 } from "@/types/remoteConfig";
 
 export const REMOTE_CONFIG_CHANGED_EVENT = "remote-config-changed";
@@ -182,4 +184,19 @@ export function finalizeImportCandidate(path: string): Promise<void> {
 /** Local WebP preview path for an Imports file (3MF/STL), or null. */
 export function getImportPreview(path: string): Promise<string | null> {
   return invoke("get_import_preview", { path });
+}
+
+/** Size of local cloud download + thumbnail cache. */
+export function getRemoteCacheStats(): Promise<RemoteCacheStats> {
+  return invoke("get_remote_cache_stats");
+}
+
+/** Delete expired cache entries (TTL / abandoned partials). */
+export function purgeRemoteCache(): Promise<RemoteCacheMaintenanceResult> {
+  return invoke("purge_remote_cache");
+}
+
+/** Wipe the entire local cloud download + thumbnail cache. */
+export function clearRemoteCache(): Promise<RemoteCacheMaintenanceResult> {
+  return invoke("clear_remote_cache");
 }

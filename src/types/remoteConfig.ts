@@ -70,6 +70,16 @@ export type ImportCandidate = {
   modifiedAt: number;
 };
 
+export type RemoteCacheStats = {
+  bytes: number;
+  fileCount: number;
+};
+
+export type RemoteCacheMaintenanceResult = RemoteCacheStats & {
+  removedFiles: number;
+  removedBytes: number;
+};
+
 export const DEFAULT_REMOTE_CONFIG: RemoteConfig = {
   enabled: false,
   baseUrl: "",
