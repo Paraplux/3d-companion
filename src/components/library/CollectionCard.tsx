@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { PreviewThumb } from "@/components/library/PreviewThumb";
 import {
   collectionPreviewThumbnails,
   formatCollectionCount,
@@ -33,22 +33,14 @@ export function CollectionCard({ collection, filesById }: CollectionCardProps) {
               4,
             )}`}
           >
-            {previews.map((preview) =>
-              preview.thumbnailPath ? (
-                <img
-                  key={preview.libraryFileId}
-                  className="collection-card__thumb"
-                  src={convertFileSrc(preview.thumbnailPath)}
-                  alt=""
-                  loading="lazy"
-                />
-              ) : (
-                <div
-                  key={preview.libraryFileId}
-                  className="collection-card__thumb collection-card__thumb--placeholder"
-                />
-              ),
-            )}
+            {previews.map((preview) => (
+              <PreviewThumb
+                key={preview.libraryFileId}
+                file={filesById.get(preview.libraryFileId)}
+                className="collection-card__thumb"
+                placeholderClassName="collection-card__thumb collection-card__thumb--placeholder"
+              />
+            ))}
           </div>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { PreviewThumb } from "@/components/library/PreviewThumb";
 import { useLibrary } from "@/hooks/useLibrary";
 import { displayNameFromFilename } from "@/lib/format";
 import type { LibraryFileId } from "@/types/libraryData";
@@ -128,11 +128,7 @@ export function ProjectFilePicker({
                       : "No models available."}
               </p>
             ) : (
-              candidates.map((file) => {
-                const thumb = file.thumbnailPath
-                  ? convertFileSrc(file.thumbnailPath)
-                  : null;
-                return (
+              candidates.map((file) => (
                   <button
                     key={file.libraryFileId}
                     type="button"
@@ -141,16 +137,11 @@ export function ProjectFilePicker({
                     disabled={busy}
                     onClick={() => void addFile(file.libraryFileId)}
                   >
-                    {thumb ? (
-                      <img
-                        className="project-file-picker__thumb"
-                        src={thumb}
-                        alt=""
-                        loading="lazy"
-                      />
-                    ) : (
-                      <span className="project-file-picker__thumb project-file-picker__thumb--placeholder" />
-                    )}
+                    <PreviewThumb
+                      file={file}
+                      className="project-file-picker__thumb"
+                      placeholderClassName="project-file-picker__thumb project-file-picker__thumb--placeholder"
+                    />
                     <span className="project-file-picker__names">
                       <span className="project-file-picker__display">
                         {displayNameFromFilename(file.name)}
@@ -160,8 +151,7 @@ export function ProjectFilePicker({
                       </span>
                     </span>
                   </button>
-                );
-              })
+                ))
             )}
           </div>
         </div>
