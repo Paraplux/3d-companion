@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLibrary } from "@/hooks/useLibrary";
 import {
   markOpenedInBambu,
@@ -6,18 +6,22 @@ import {
   takePendingBambuSync,
 } from "@/lib/pendingBambuSync";
 import { getRemoteConfig } from "@/lib/remoteApi";
+import { displayNameFromFilename } from "@/lib/format";
 
 /** Give Bambu a moment to flush the file to disk after the user switches back. */
 const SYNC_SETTLE_MS = 1200;
+const TOAST_MS = 4200;
 
 /**
  * When Cloud → Auto sync after Bambu is enabled, push the local cache back
  * to the gateway once the user returns to 3D Companion (window focus).
  */
 export function CloudAutoSync() {
-  const { cloudMode, replaceCloudFile } = useLibrary();
+  const { cloudMode, files, replaceCloudFile } = useLibrary();
   const syncingRef = useRef(false);
   const settleTimerRef = useRef<number | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     if (!cloudMode) {
@@ -49,14 +53,36 @@ export function CloudAutoSync() {
         return;
       }
 
+      const file = files.find((entry) => entry.libraryFileId === libraryFileId);
+      const label = file
+        ? displayNameFromFilename(file.name)
+        : "model";
+
       syncingRef.current = true;
       try {
-        await replaceCloudFile(libraryFileId);
+        const { unchanged } = await replaceCloudFile(libraryFileId);
+        showToast(
+          unchanged
+            ? `Up to date — ${label}`
+            : `Synced to cloud — ${label}`,
+        );
       } catch {
         markOpenedInBambu(libraryFileId);
+        showToast(`Could not auto-sync ${label}`);
       } finally {
         syncingRef.current = false;
       }
+    }
+
+    function showToast(message: string) {
+      setToast(message);
+      if (toastTimerRef.current != null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+      toastTimerRef.current = window.setTimeout(() => {
+        toastTimerRef.current = null;
+        setToast(null);
+      }, TOAST_MS);
     }
 
     function scheduleSync() {
@@ -87,8 +113,26 @@ export function CloudAutoSync() {
       if (settleTimerRef.current != null) {
         window.clearTimeout(settleTimerRef.current);
       }
+      if (toastTimerRef.current != null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
     };
-  }, [cloudMode, replaceCloudFile]);
+  }, [cloudMode, files, replaceCloudFile]);
 
-  return null;
+  if (!toast) {
+    return null;
+  }
+
+  return (
+    <div className="app-toast" role="status" aria-live="polite">
+      <span className="app-toast__label">{toast}</span>
+      <button
+        type="button"
+        className="app-toast__dismiss"
+        onClick={() => setToast(null)}
+      >
+        Dismiss
+      </button>
+    </div>
+  );
 }
